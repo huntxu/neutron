@@ -184,6 +184,19 @@ class L3RpcCallback(n_rpc.RpcCallback):
                 self.l3plugin.update_floatingip_status(
                     context, fip_id, constants.FLOATINGIP_STATUS_DOWN)
 
+    def update_portmapping_statuses(self, context, pm_statuses):
+        """Update operational status for portmappings."""
+        with context.session.begin(subtransactions=True):
+            for (pm_id, status) in pm_statuses.iteritems():
+                LOG.debug(
+                    _("New status for portmapping %(id)s: %(status)s"),
+                    {'id': pm_id, 'status': status})
+                try:
+                    self.l3plugin.update_portmapping_status(
+                        context, pm_id, status)
+                except l3.PortMappingNotFound:
+                    LOG.debug(_("Portmapping %s no longer present."), pm_id)
+
     def get_ports_by_subnet(self, context, **kwargs):
         """DVR: RPC called by dvr-agent to get all ports for subnet."""
         subnet_id = kwargs.get('subnet_id')

@@ -103,6 +103,23 @@ class FloatingIP(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     router = orm.relationship(Router, backref='floating_ips')
 
 
+class PortMapping(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    name = sa.Column(sa.String(36))
+    status = sa.Column(sa.String(16))
+    admin_state_up = sa.Column(sa.Boolean, nullable=False)
+    protocol = sa.Column(sa.String(16), nullable=False)
+    router_id = sa.Column(sa.String(36),
+                          sa.ForeignKey('routers.id', ondelete='CASCADE'),
+                          nullable=False)
+    router_port = sa.Column(sa.Integer, nullable=False)
+    destination_ip = sa.Column(sa.String(64), nullable=False)
+    destination_port = sa.Column(sa.Integer, nullable=False)
+    router = orm.relationship(
+        Router,
+        backref=orm.backref(
+            'portmappings', cascade='all,delete', uselist=True))
+
+
 class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
     """Mixin class to add L3/NAT router methods to db_base_plugin_v2."""
 
@@ -391,6 +408,10 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         router = self._get_router(context, router_id)
         if self.get_floatingips_count(
             admin_ctx, filters={'router_id': [router_id]}):
+            raise l3.RouterInUse(router_id=router_id)
+        if self.get_portmappings_count(
+            admin_ctx, filters={'router_id': [router_id]}
+        ):
             raise l3.RouterInUse(router_id=router_id)
         device_owner = self._get_device_owner(context, router)
         if any(rp.port_type == device_owner
@@ -920,6 +941,111 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         return self._get_collection_count(context, FloatingIP,
                                           filters=filters)
 
+    def _get_portmapping(self, context, id):
+        try:
+            portmapping = self._get_by_id(context, PortMapping, id)
+        except exc.NoResultFound:
+            raise l3.PortMappingNotFound(portmapping_id=id)
+        return portmapping
+
+    def _make_portmapping_dict(self, portmapping, fields=None):
+        res = {'id': portmapping['id'],
+               'tenant_id': portmapping['tenant_id'],
+               'name': portmapping['name'],
+               'status': portmapping['status'],
+               'admin_state_up': portmapping['admin_state_up'],
+               'protocol': portmapping['protocol'],
+               'router_id': portmapping['router_id'],
+               'router_port': portmapping['router_port'],
+               'destination_ip': portmapping['destination_ip'],
+               'destination_port': portmapping['destination_port']}
+        return self._fields(res, fields)
+
+    def create_portmapping(self, context, portmapping):
+        portmapping = portmapping['portmapping']
+        tenant_id = self._get_tenant_id_for_create(context, portmapping)
+        portmapping_id = uuidutils.generate_uuid()
+        router = self._get_router(context, portmapping['router_id'])
+        if tenant_id != tenant_id:
+            raise l3.RouterNotOwnedByTenant(router_id=router.id)
+        if self.get_portmappings(
+            context, {'protocol': [portmapping['protocol']],
+                      'router_id': [portmapping['router_id']],
+                      'router_port': [portmapping['router_port']]}
+        ):
+            raise l3.PortMappingAlreadyMapped(
+                protocol=portmapping['protocol'],
+                router_port=portmapping['router_port'],
+                router_id=portmapping['router_id'])
+        with context.session.begin(subtransactions=True):
+            portmapping_db = PortMapping(
+                id=portmapping_id,
+                tenant_id=tenant_id,
+                name=portmapping['name'],
+                status=l3_constants.PORTMAPPING_STATUS_DOWN,
+                admin_state_up=portmapping['admin_state_up'],
+                protocol=portmapping['protocol'],
+                router_id=portmapping['router_id'],
+                router_port=portmapping['router_port'],
+                destination_ip=portmapping['destination_ip'],
+                destination_port=portmapping['destination_port'])
+            context.session.add(portmapping_db)
+
+        return self._make_portmapping_dict(portmapping_db)
+
+    def _update_portmapping(self, context, id, portmapping):
+        portmapping = portmapping['portmapping']
+        portmapping_db = self._get_portmapping(context, id)
+        admin_state_changed = (
+            'admin_state_up' in portmapping and
+            portmapping_db['admin_state_up'] != portmapping['admin_state_up'])
+        with context.session.begin(subtransactions=True):
+            portmapping_db.update(portmapping)
+        return (admin_state_changed,
+                self._make_portmapping_dict(portmapping_db))
+
+    def update_portmapping(self, context, id, portmapping):
+        admin_state_changed, portmapping = self._update_portmapping(
+            context, id, portmapping)
+        return portmapping
+
+    def update_portmapping_status(self, context, pm_id, status):
+        """Update operational status for portmapping in neutron DB."""
+        pm_query = self._model_query(context, PortMapping).filter(
+            PortMapping.id == pm_id)
+        pm_query.update({'status': status}, synchronize_session=False)
+
+    def get_portmapping(self, context, id, fields=None):
+        portmapping = self._get_portmapping(context, id)
+        return self._make_portmapping_dict(portmapping, fields)
+
+    def _delete_portmapping(self, context, id):
+        portmapping = self._get_portmapping(context, id)
+        router_id = portmapping['router_id']
+        with context.session.begin(subtransactions=True):
+            context.session.delete(portmapping)
+        return router_id
+
+    def delete_portmapping(self, context, id):
+        self._delete_portmapping(context, id)
+
+    def get_portmappings(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        marker_obj = self._get_marker_obj(context, 'portmapping',
+                                          limit, marker)
+        return self._get_collection(context, PortMapping,
+                                    self._make_portmapping_dict,
+                                    filters=filters, fields=fields,
+                                    sorts=sorts,
+                                    limit=limit,
+                                    marker_obj=marker_obj,
+                                    page_reverse=page_reverse)
+
+    def get_portmappings_count(self, context, filters=None):
+        return self._get_collection_count(context, PortMapping,
+                                          filters=filters)
+
     def prevent_l3_port_deletion(self, context, port_id):
         """Checks to make sure a port is allowed to be deleted.
 
@@ -1013,6 +1139,13 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             return []
         return self.get_floatingips(context, {'router_id': router_ids})
 
+    def _get_sync_portmappings(self, context, router_ids):
+        """Query portmappings that relate to list of router_ids."""
+        if not router_ids:
+            return []
+        return self.get_portmappings(
+            context, {'router_id': router_ids, 'admin_state_up': [True]})
+
     def get_sync_gw_ports(self, context, gw_port_ids):
         if not gw_port_ids:
             return []
@@ -1103,6 +1236,15 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                 router_interfaces.append(interface)
                 router[l3_constants.INTERFACE_KEY] = router_interfaces
 
+    def _process_portmappings(self, routers_dict, portmappings):
+        for portmapping in portmappings:
+            router = routers_dict.get(portmapping['router_id'])
+            if router:
+                router_portmappings = router.get(l3_constants.PORTMAPPING_KEY,
+                                                 [])
+                router_portmappings.append(portmapping)
+                router[l3_constants.PORTMAPPING_KEY] = router_portmappings
+
     def _get_router_info_list(self, context, router_ids=None, active=None,
                               device_owners=None):
         """Query routers and their related floating_ips, interfaces."""
@@ -1114,14 +1256,18 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             interfaces = self.get_sync_interfaces(
                 context, router_ids, device_owners)
             floating_ips = self._get_sync_floating_ips(context, router_ids)
-            return (routers, interfaces, floating_ips)
+            portmappings = self._get_sync_portmappings(context, router_ids)
+            return (routers, interfaces, floating_ips, portmappings)
 
     def get_sync_data(self, context, router_ids=None, active=None):
-        routers, interfaces, floating_ips = self._get_router_info_list(
+        (
+            routers, interfaces, floating_ips, portmappings
+        ) = self._get_router_info_list(
             context, router_ids=router_ids, active=active)
         routers_dict = dict((router['id'], router) for router in routers)
         self._process_floating_ips(context, routers_dict, floating_ips)
         self._process_interfaces(routers_dict, interfaces)
+        self._process_portmappings(routers_dict, portmappings)
         return routers_dict.values()
 
 
@@ -1238,6 +1384,26 @@ class L3_NAT_db_mixin(L3_NAT_dbonly_mixin, L3RpcNotifierMixin):
             return
 
         return router_ids
+
+    def create_portmapping(self, context, portmapping):
+        portmapping = super(
+            L3_NAT_db_mixin, self).create_portmapping(context, portmapping)
+        self.notify_router_updated(
+            context, portmapping['router_id'], 'create_portmapping', {})
+        return portmapping
+
+    def update_portmapping(self, context, id, portmapping):
+        admin_state_changed, portmapping = self._update_portmapping(
+            context, id, portmapping)
+        if admin_state_changed:
+            self.notify_router_updated(
+                context, portmapping['router_id'], 'update_portmapping', {})
+        return portmapping
+
+    def delete_portmapping(self, context, id):
+        router_id = self._delete_portmapping(context, id)
+        self.notify_router_updated(
+            context, router_id, 'delete_portmapping', {})
 
     def notify_routers_updated(self, context, router_ids):
         super(L3_NAT_db_mixin, self).notify_routers_updated(

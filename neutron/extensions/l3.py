@@ -76,6 +76,51 @@ class RouterExternalGatewayInUseByFloatingIp(qexception.InUse):
                 "gateway to external network %(net_id)s is required by one or "
                 "more floating IPs.")
 
+
+class RouterNotOwnedByTenant(qexception.Conflict):
+    message = _("The following router %(router_id)s is not owned by your "
+                "tenant.")
+
+
+class PortMappingNotFound(qexception.NotFound):
+    message = _("Portmapping %(portmapping_id)s could not be found.")
+
+
+class PortMappingAlreadyMapped(qexception.Conflict):
+    message = _("%(protocol)s port %(router_port)s of router %(router_id)s "
+                "has already been mapped.")
+
+
+class PortmappingInvalidProtocol(qexception.InvalidInput):
+    message = _("Portmapping protocol %(protocol)s is not supported. "
+                "Only protocol values %(values)s are supported.")
+
+
+class PortmappingInvalidPort(qexception.InvalidInput):
+    message = _("Invalid value for port: %(port)s. "
+                "It must be an integer between 1 to 65535.")
+
+portmapping_valid_protocols = [constants.TCP, constants.UDP]
+
+
+def convert_portmapping_protocol(value):
+    if value.lower() in portmapping_valid_protocols:
+        return value.lower()
+    else:
+        raise PortmappingInvalidProtocol(protocol=value,
+                                         values=portmapping_valid_protocols)
+
+
+def convert_to_portmapping_port(value):
+    try:
+        ret = int(value)
+        if not (ret >= 1 and ret <= 65535):
+            raise ValueError
+    except (ValueError, TypeError):
+        raise PortmappingInvalidPort(port=value)
+
+    return ret
+
 ROUTERS = 'routers'
 EXTERNAL_GW_INFO = 'external_gateway_info'
 
@@ -144,6 +189,41 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status': {'allow_post': False, 'allow_put': False,
                    'is_visible': True},
     },
+    'portmappings': {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True,
+               'primary_key': True},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'required_by_policy': True,
+                      'validate': {'type:string': None},
+                      'is_visible': True},
+        'name': {'allow_post': True, 'allow_put': True, 'default': '',
+                 'validate': {'type:string': None},
+                 'is_visible': True},
+        'status': {'allow_post': False, 'allow_put': False,
+                   'is_visible': True},
+        'admin_state_up': {'allow_post': True, 'allow_put': True,
+                           'default': True,
+                           'convert_to': attr.convert_to_boolean,
+                           'is_visible': True},
+        'protocol': {'allow_post': True, 'allow_put': False,
+                     'is_visible': True, 'default': 'tcp',
+                     'convert_to': convert_portmapping_protocol,
+                     'validate': {'type:values': portmapping_valid_protocols}},
+        'router_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:uuid': None},
+                      'is_visible': True},
+        'router_port': {'allow_post': True, 'allow_put': False,
+                        'is_visible': True,
+                        'convert_to': convert_to_portmapping_port},
+        'destination_ip': {'allow_post': True, 'allow_put': False,
+                           'is_visible': True,
+                           'validate': {'type:ip_address': None}},
+        'destination_port': {'allow_post': True, 'allow_put': False,
+                             'is_visible': True,
+                             'convert_to': convert_to_portmapping_port},
+    },
 }
 
 l3_quota_opts = [
@@ -154,6 +234,10 @@ l3_quota_opts = [
     cfg.IntOpt('quota_floatingip',
                default=50,
                help=_('Number of floating IPs allowed per tenant. '
+                      'A negative value means unlimited.')),
+    cfg.IntOpt('quota_portmapping',
+               default=50,
+               help=_('Number of portmappings allowed per tenant. '
                       'A negative value means unlimited.')),
 ]
 cfg.CONF.register_opts(l3_quota_opts, 'QUOTAS')
@@ -262,8 +346,33 @@ class RouterPluginBase(object):
                         page_reverse=False):
         pass
 
+    @abc.abstractmethod
+    def create_portmapping(self, context, portmapping):
+        pass
+
+    @abc.abstractmethod
+    def update_portmapping(self, context, id, portmapping):
+        pass
+
+    @abc.abstractmethod
+    def get_portmapping(self, context, id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def delete_portmapping(self, context, id):
+        pass
+
+    @abc.abstractmethod
+    def get_portmappings(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        pass
+
     def get_routers_count(self, context, filters=None):
         raise NotImplementedError()
 
     def get_floatingips_count(self, context, filters=None):
+        raise NotImplementedError()
+
+    def get_portmappings_count(self, context, filters=None):
         raise NotImplementedError()

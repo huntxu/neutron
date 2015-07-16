@@ -365,6 +365,11 @@ class IptablesManager(object):
             self.ipv4['nat'].add_chain('float-snat')
             self.ipv4['nat'].add_rule('snat', '-j $float-snat')
 
+            # Add a portmapping chain for router portmapping feature.
+            self.ipv4['nat'].add_chain('portmapping')
+            self.ipv4['nat'].add_rule('PREROUTING', '-j $portmapping',
+                                      wrap=False)
+
     def is_chain_empty(self, table, chain, ip_version=4, wrap=True):
         try:
             requested_table = {4: self.ipv4, 6: self.ipv6}[ip_version][table]
