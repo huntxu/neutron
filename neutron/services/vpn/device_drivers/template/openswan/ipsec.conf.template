@@ -6,7 +6,8 @@ conn %default
     salifetime=60m
     keyingtries=%forever
 {% for ipsec_site_connection in vpnservice.ipsec_site_connections if ipsec_site_connection.admin_state_up
-%}conn {{ipsec_site_connection.id}}
+-%}
+conn {{ipsec_site_connection.id}}
     # NOTE: a default route is required for %defaultroute to work...
     left={{vpnservice.external_ip}}
     leftid={{vpnservice.external_ip}}
@@ -51,11 +52,17 @@ conn %default
     ##########################
     # [transform_protocol]
     auth={{ipsec_site_connection.ipsecpolicy.transform_protocol}}
+    {% if ipsec_site_connection.ipsecpolicy.transform_protocol == "ah" -%}
+    # AH protocol does not support encryption
+    # [auth_algorithm]-[pfs]
+    phase2alg={{ipsec_site_connection.ipsecpolicy.auth_algorithm}};{{ipsec_site_connection.ipsecpolicy.pfs}}
+    {% else -%}
     # [encryption_algorithm]-[auth_algorithm]-[pfs]
     phase2alg={{ipsec_site_connection.ipsecpolicy.encryption_algorithm}}-{{ipsec_site_connection.ipsecpolicy.auth_algorithm}};{{ipsec_site_connection.ipsecpolicy.pfs}}
+    {% endif -%}
     # [encapsulation_mode]
     type={{ipsec_site_connection.ipsecpolicy.encapsulation_mode}}
     # [lifetime_value]
     salifetime={{ipsec_site_connection.ipsecpolicy.lifetime_value}}s
     # lifebytes=100000 if lifetime_units=kilobytes (IKEv2 only)
-{% endfor %}
+{% endfor -%}
