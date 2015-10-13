@@ -40,9 +40,13 @@ class IPsecVpnDriverCallBack(n_rpc.RpcCallback):
 
     def get_vpn_services_on_host(self, context, host=None):
         """Returns the vpnservices on the host."""
+        vpnservices = []
         plugin = self.driver.service_plugin
-        vpnservices = plugin._get_agent_hosting_vpn_services(
-            context, host)
+        for provider in plugin.drivers:
+            if plugin.drivers[provider] == self.driver:
+                vpnservices = plugin._get_agent_hosting_vpn_services(
+                    context, host, provider)
+                break
         return [self.driver._make_vpnservice_dict(vpnservice)
                 for vpnservice in vpnservices]
 

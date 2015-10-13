@@ -41,6 +41,14 @@ class VpnDriver(object):
             constants.L3_ROUTER_NAT)
 
     @property
+    def core_plugin(self):
+        try:
+            return self._core_plugin
+        except AttributeError:
+            self._core_plugin = manager.NeutronManager.get_plugin()
+            return self._core_plugin
+
+    @property
     def service_type(self):
         pass
 
@@ -55,19 +63,6 @@ class VpnDriver(object):
 
     @abc.abstractmethod
     def delete_vpnservice(self, context, vpnservice):
-        pass
-
-    @abc.abstractmethod
-    def create_ipsec_site_connection(self, context, ipsec_site_connection):
-        pass
-
-    @abc.abstractmethod
-    def update_ipsec_site_connection(self, context, old_ipsec_site_connection,
-                                     ipsec_site_connection):
-        pass
-
-    @abc.abstractmethod
-    def delete_ipsec_site_connection(self, context, ipsec_site_connection):
         pass
 
 

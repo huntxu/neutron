@@ -280,6 +280,7 @@ class VpnaasExtensionTestCase(test_api_v2_extension.ExtensionTestCase):
                                'subnet_id': _uuid(),
                                'router_id': _uuid(),
                                'admin_state_up': True,
+                               'provider': 'fake_provider',
                                'tenant_id': _uuid()}}
         return_value = copy.copy(data['vpnservice'])
         return_value.update({'status': "ACTIVE", 'id': vpnservice_id})
