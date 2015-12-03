@@ -965,9 +965,9 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         portmapping = portmapping['portmapping']
         tenant_id = self._get_tenant_id_for_create(context, portmapping)
         portmapping_id = uuidutils.generate_uuid()
-        router = self._get_router(context, portmapping['router_id'])
-        if tenant_id != tenant_id:
-            raise l3.RouterNotOwnedByTenant(router_id=router.id)
+        # Check router's tenant id and existence,
+        # on error raise l3.RouterNotFound
+        self._get_router(context, portmapping['router_id'])
         if self.get_portmappings(
             context, {'protocol': [portmapping['protocol']],
                       'router_id': [portmapping['router_id']],
