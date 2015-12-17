@@ -329,7 +329,7 @@ class PPTPDriver(device_drivers.DeviceDriver):
             if credential_id in self.credentials:
                 self.credentials[credential_id]['password'] = password
 
-        for port_id, port in ports['added']:
+        for port_id, port in ports['added'].iteritems():
             process_id = port['vpnservice_id']
             port_ip = port['ip']
             credential_id = port['credential_id']
