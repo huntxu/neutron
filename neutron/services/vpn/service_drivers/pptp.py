@@ -13,7 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.common import exceptions
 from neutron.common import rpc as n_rpc
+from neutron.db.vpn import vpn_validator
 from neutron.openstack.common import log as logging
 from neutron.services.vpn.common import topics
 from neutron.services.vpn import service_drivers
@@ -24,6 +26,11 @@ LOG = logging.getLogger(__name__)
 
 PPTP = 'pptp'
 BASE_PPTP_VERSION = '1.0'
+
+
+class PPTPVpnServiceAlreadyExistsForRouter(exceptions.BadRequest):
+    message = _("Another VPN service %(vpnservice_id)s with type PPTP already "
+                "exists for router %(router_id)s.")
 
 
 class PPTPVpnDriverCallBack(n_rpc.RpcCallback):
@@ -90,11 +97,35 @@ class PPTPVpnAgentApi(n_rpc.RpcProxy, n_rpc.RpcCallback):
             context, 'sync_from_server', host, **kwargs)
 
 
+class PPTPVPNValidator(vpn_validator.VpnReferenceValidator):
+    """Validator methods for the PPTP VPN."""
+
+    def __init__(self, service_plugin):
+        self.service_plugin = service_plugin
+        super(PPTPVPNValidator, self).__init__()
+
+    def _check_pptp_vpnservice_already_exists_for_router(
+            self, context, router_id):
+        for vpnservice in self.service_plugin.get_vpnservices(
+            context, filters={'router_id': [router_id]}
+        ):
+            if vpnservice['provider'] == PPTP:
+                raise PPTPVpnServiceAlreadyExistsForRouter(
+                    vpnservice_id=vpnservice['id'],
+                    router_id=router_id)
+
+    def validate_vpnservice(self, context, vpnservice):
+        self._check_pptp_vpnservice_already_exists_for_router(
+            context, vpnservice['router_id'])
+        super(PPTPVPNValidator, self).validate_vpnservice(context, vpnservice)
+
+
 class PPTPVPNDriver(service_drivers.VpnDriver):
     """VPN Service Driver class for PPTP."""
 
     def __init__(self, service_plugin):
-        super(PPTPVPNDriver, self).__init__(service_plugin)
+        super(PPTPVPNDriver, self).__init__(
+            service_plugin, PPTPVPNValidator(service_plugin))
         self.endpoints = [PPTPVpnDriverCallBack(self)]
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(
