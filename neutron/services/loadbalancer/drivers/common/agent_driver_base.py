@@ -15,6 +15,7 @@
 import uuid
 
 from oslo.config import cfg
+from sqlalchemy.orm import exc
 
 from neutron.common import constants as q_const
 from neutron.common import exceptions as n_exc
@@ -85,8 +86,12 @@ class LoadBalancerCallbacks(n_rpc.RpcCallback):
         with context.session.begin(subtransactions=True):
             qry = context.session.query(loadbalancer_db.Pool)
             qry = qry.filter_by(id=pool_id)
-            pool = qry.one()
             retval = {}
+            # qry.one will raise NoResultFound if pool not exist
+            try:
+                pool = qry.one()
+            except exc.NoResultFound:
+                return retval
             retval['pool'] = self.plugin._make_pool_dict(pool)
 
             if pool.vip:
