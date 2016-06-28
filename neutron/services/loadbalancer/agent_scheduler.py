@@ -86,6 +86,12 @@ class LbaasAgentSchedulerDbMixin(agentschedulers_db.AgentSchedulerDbMixin,
                 candidates.append(agent)
         return candidates
 
+    def update_lbaas_agent_hosting_pool(self, context, id, agent):
+        query = context.session.query(PoolLoadbalancerAgentBinding)
+        query = query.filter_by(pool_id=id)
+        with context.session.begin(subtransactions=True):
+            query[0].agent = agent
+            context.session.flush()
 
 class ChanceScheduler(object):
     """Allocate a loadbalancer agent for a vip in a random way."""

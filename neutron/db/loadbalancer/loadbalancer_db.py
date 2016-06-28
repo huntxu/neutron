@@ -88,7 +88,7 @@ class Vip(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
                                            cascade="all, delete-orphan")
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     connection_limit = sa.Column(sa.Integer)
-    port = orm.relationship(models_v2.Port)
+    port = orm.relationship(models_v2.Port, backref="vips")
 
 
 class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
@@ -320,12 +320,35 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             sess_qry = context.session.query(SessionPersistence)
             sess_qry.filter_by(vip_id=vip_id).delete()
 
+    def _vip_port_has_exist(self, context, vip_db, ip_addr):
+        port_filter = {'fixed_ips': {'ip_address': [ip_addr]}}
+
+        ports = self._core_plugin.get_ports(context, filters=port_filter)
+        if ports:
+            # verify port id has exist in VIP
+            vips = self.get_vips(context,
+                                 filters={'port_id': [ports[0]['id']]})
+            if vips:
+                # verify vip listen on different L4 port
+                for vip in vips:
+                    if vip_db.protocol_port == vip['protocol_port']:
+                        raise loadbalancer.ProtocolPortInUse(
+                            proto_port=vip['protocol_port'], vip=vip['id'])
+                return ports[0]
+        return None
+
     def _create_port_for_vip(self, context, vip_db, subnet_id, ip_address):
         # resolve subnet and create port
         subnet = self._core_plugin.get_subnet(context, subnet_id)
         fixed_ip = {'subnet_id': subnet['id']}
+        need_create_port = True
+
         if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
             fixed_ip['ip_address'] = ip_address
+            # check if vip port has exist
+            port = self._vip_port_has_exist(context, vip_db, ip_address)
+            if port:
+                need_create_port = False
 
         port_data = {
             'tenant_id': vip_db.tenant_id,
@@ -338,7 +361,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             'fixed_ips': [fixed_ip]
         }
 
-        port = self._core_plugin.create_port(context, {'port': port_data})
+        if need_create_port:
+            port = self._core_plugin.create_port(context, {'port': port_data})
         vip_db.port_id = port['id']
         # explicitly sync session with db
         context.session.flush()
@@ -473,7 +497,9 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
             context.session.delete(vip)
         if vip.port:  # this is a Neutron port
-            self._core_plugin.delete_port(context, vip.port.id)
+            # check if vip port has used by other VIPs
+            if not vip.port.vips:
+                self._core_plugin.delete_port(context, vip.port.id)
 
     def get_vip(self, context, id, fields=None):
         vip = self._get_resource(context, Vip, id)

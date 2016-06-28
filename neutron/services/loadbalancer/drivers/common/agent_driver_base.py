@@ -357,7 +357,37 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
             raise lbaas_agentscheduler.NoActiveLbaasAgent(pool_id=pool_id)
         return agent['agent']
 
+    def _update_pool_agent(self, context, pool_id, new_agent):
+        # check if need to update
+        old_agent = self.get_pool_agent(context, pool_id)
+        if old_agent['id'] != new_agent['id']:
+            # delete pool on old agent
+            pool = self.plugin.get_pool(context, pool_id)
+            self.agent_rpc.delete_pool(context, pool, old_agent['host'])
+            self.plugin.update_lbaas_agent_hosting_pool(context, pool_id,
+                                                        new_agent)
+            self.agent_rpc.create_pool(context, pool, new_agent['host'],
+                                       self.device_driver)
+
+    def _reschedule_pool_by_vip(self, context, vip):
+        # check if same port exist on others VIP
+        vips = self.plugin.get_vips(context, filters={'port_id':
+                                    [vip['port_id']]})
+        has_schedule_pools = [_v['pool_id'] for _v in vips
+                              if _v['pool_id'] != vip['pool_id']]
+
+        if has_schedule_pools:
+            # reschedule pool to same agent
+            agent = self.get_pool_agent(context, has_schedule_pools[0])
+            agents = self.plugin.get_lbaas_agents(
+                context, active=True,
+                filters={'id': [agent['id']]})
+            self._update_pool_agent(context, vip['pool_id'], agents[0])
+
     def create_vip(self, context, vip):
+        # if same vip bound to different L4 port, need reschedule
+        # all pool to same lbaas agent
+        self._reschedule_pool_by_vip(context, vip)
         agent = self.get_pool_agent(context, vip['pool_id'])
         self.agent_rpc.create_vip(context, vip, agent['host'])
 

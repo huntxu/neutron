@@ -94,6 +94,10 @@ class MemberExists(qexception.NeutronException):
                 "already present in pool %(pool)s")
 
 
+class ProtocolPortInUse(qexception.BadRequest):
+    message = _("VIP %(vip)s has bound to the protocol port %(proto_port)s")
+
+
 RESOURCE_ATTRIBUTE_MAP = {
     'vips': {
         'id': {'allow_post': False, 'allow_put': False,
