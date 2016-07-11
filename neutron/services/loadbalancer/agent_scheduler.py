@@ -17,13 +17,16 @@ import random
 
 import sqlalchemy as sa
 from sqlalchemy import orm
+from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 
 from neutron.common import constants
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron.db import model_base
+from neutron.db.loadbalancer import loadbalancer_db as lb_db
 from neutron.extensions import lbaas_agentscheduler
+from neutron.extensions import loadbalancer
 from neutron.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
@@ -92,6 +95,86 @@ class LbaasAgentSchedulerDbMixin(agentschedulers_db.AgentSchedulerDbMixin,
         with context.session.begin(subtransactions=True):
             query[0].agent = agent
             context.session.flush()
+
+    def _get_same_pools_by_pool_id(self, context, pool_id):
+        pool = self.get_pool(context, pool_id)
+        pools = []
+        with context.session.begin(subtransactions=True):
+            try:
+                vip = self._get_resource(context, lb_db.Vip, pool['vip_id'])
+                pools = [_vip.pool_id for _vip in vip.port.vips]
+            except loadbalancer.VipNotFound:
+                # in this case, pool not bound to a vip
+                pass
+        return pools
+
+    def _check_pool_can_be_bound_to_agent(self, context, pool_id, agent_id):
+        # check pool if has added
+        query = context.session.query(PoolLoadbalancerAgentBinding)
+        query = query.filter(PoolLoadbalancerAgentBinding.pool_id == pool_id)
+        try:
+            binding = query.one()
+            raise loadbalancer.PoolHasBoundToAgent(
+                pool=pool_id,
+                agent=binding.agent_id)
+        except exc.NoResultFound:
+            # not add
+            pass
+
+        # check if same pools has bound to same agent
+        same_pools = self._get_same_pools_by_pool_id(context, pool_id)
+        if len(same_pools) > 1:
+            query = context.session.query(PoolLoadbalancerAgentBinding)
+            query = query.filter(
+                PoolLoadbalancerAgentBinding.pool_id.in_(same_pools))
+
+            agents = [_q.agent_id for _q in query]
+            if agents and (set([agent_id]) != set(agents)):
+                raise loadbalancer.PoolsBoundToDifferentAgents(
+                    pools=same_pools,
+                    agents=agents)
+
+    def _bind_pool(self, context, agent_id, pool_id):
+        with context.session.begin(subtransactions=True):
+            # check if pool could add to the agent
+            self._check_pool_can_be_bound_to_agent(context,
+                                                   pool_id, agent_id)
+
+            binding = PoolLoadbalancerAgentBinding()
+            binding.agent_id = agent_id
+            binding.pool_id = pool_id
+            context.session.add(binding)
+
+    def add_pool_to_lbaas_agent(self, context, agent_id, pool_id):
+        agent = self._get_agent(context, agent_id)
+        pool = self.get_pool(context, pool_id)
+        self._bind_pool(context, agent_id, pool_id)
+        driver = self._get_driver_for_pool(context, pool_id)
+        driver.add_pool_to_agent(context, pool, agent)
+
+    def _unbind_pool(self, context, agent, pool):
+        with context.session.begin(subtransactions=True):
+            query = context.session.query(PoolLoadbalancerAgentBinding)
+            query = query.filter(
+                PoolLoadbalancerAgentBinding.pool_id == pool,
+                PoolLoadbalancerAgentBinding.agent_id == agent)
+            try:
+                binding = query.one()
+            except exc.NoResultFound:
+                raise loadbalancer.PoolNotBoundToAgent(pool=pool, agent=agent)
+            context.session.delete(binding)
+
+    def remove_pool_from_lbaas_agent(self, context, agent_id, pool_id):
+        # unbound the pool
+        self._unbind_pool(context, agent_id, pool_id)
+        # remove from agent
+        agent = self._get_agent(context, agent_id)
+        pool = self.get_pool(context, pool_id)
+        driver = self._get_driver_for_pool(context, pool_id)
+        driver.remove_pool_from_agent(context, pool, agent)
+        LOG.info(_('Remove pool %(pool)s from agent %(agent)s'),
+                 {'pool': pool_id, 'agent': agent_id})
+
 
 class ChanceScheduler(object):
     """Allocate a loadbalancer agent for a vip in a random way."""

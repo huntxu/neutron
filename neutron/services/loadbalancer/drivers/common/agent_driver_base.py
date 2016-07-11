@@ -474,3 +474,19 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
 
     def stats(self, context, pool_id):
         pass
+
+    def add_pool_to_agent(self, context, pool, agent):
+        # Update pool status to PENDING_UPDATE
+        self.plugin.update_status(context, loadbalancer_db.Pool,
+                                  pool['id'], constants.PENDING_UPDATE)
+        # Must create before update
+        self.agent_rpc.create_pool(context, pool, agent['host'],
+                                   self.device_driver)
+
+        self.agent_rpc.update_pool(context, None, pool, agent['host'])
+
+    def remove_pool_from_agent(self, context, pool, agent):
+        # Update pool status to DOWN
+        self.plugin.update_status(context, loadbalancer_db.Pool,
+                                  pool['id'], constants.DOWN)
+        self.agent_rpc.delete_pool(context, pool, agent['host'])

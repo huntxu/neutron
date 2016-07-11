@@ -112,6 +112,8 @@
     "get_l3-agents": "rule:admin_only",
     "get_loadbalancer-agent": "rule:admin_only",
     "get_loadbalancer-pools": "rule:admin_only",
+    "create_loadbalancer-pool": "rule:admin_only",
+    "delete_loadbalancer-pool": "rule:admin_only",
 
     "create_floatingip": "rule:regular_user",
     "create_floatingip:floating_ip_address": "rule:admin_only",

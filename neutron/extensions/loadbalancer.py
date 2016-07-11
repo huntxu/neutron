@@ -98,6 +98,18 @@ class ProtocolPortInUse(qexception.BadRequest):
     message = _("VIP %(vip)s has bound to the protocol port %(proto_port)s")
 
 
+class PoolNotBoundToAgent(qexception.BadRequest):
+    message = _("Pool %(pool)s has not bound to agent %(agent)s")
+
+
+class PoolHasBoundToAgent(qexception.BadRequest):
+    message = _("Pool %(pool)s has bound to agent %(agent)s")
+
+
+class PoolsBoundToDifferentAgents(qexception.BadRequest):
+    message = _("Same pools %(pools)s bound to different agents %(agents)s")
+
+
 RESOURCE_ATTRIBUTE_MAP = {
     'vips': {
         'id': {'allow_post': False, 'allow_put': False,
