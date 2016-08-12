@@ -16,6 +16,9 @@
 from alembic import op
 import sqlalchemy as sa
 
+# This provider should be changed according to the configurations
+DEFAULT_VPN_PROVIDER = 'openswan'
+
 
 def upgrade():
     op.create_table(
@@ -39,6 +42,13 @@ def upgrade():
         sa.ForeignKeyConstraint(
             ['port_id'], ['ports.id'], ondelete='CASCADE')
     )
+    vpnservices = sa.sql.table('vpnservices', sa.sql.column('id'))
+    associations = sa.sql.table('providerresourceassociations',
+                                sa.sql.column('provider_name'),
+                                sa.sql.column('resource_id'))
+    op.execute(associations.insert().from_select(
+        ['provider_name', 'resource_id'],
+        sa.select([sa.literal(DEFAULT_VPN_PROVIDER), vpnservices.c.id])))
 
 
 def downgrade():
