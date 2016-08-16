@@ -120,7 +120,17 @@ class PPTPProcess(object):
     def stop(self):
         self.enabled = False
         if self.active:
-            self._execute(['kill', '-9', '--', '-%s' % self.pid])
+            cmd = ['kill', '-9', '--', '-%s' % self.pid]
+            # check if namespace exists
+            ip_wrapper = ip_lib.IPWrapper(self.root_helper, self.namespace)
+            if ip_wrapper.netns.exists(self.namespace):
+                self._execute(cmd)
+            else:
+                LOG.info(_('Router netnamespace %(namespace)s not found, '
+                         'kill pptpd process id %(pid)s in root netnamespace'),
+                         {'namespace': self.namespace, 'pid': self.pid})
+                # just kill process in root netnamespace
+                utils.execute(cmd)
 
     def update_ports_status(self):
         changed = {}
