@@ -72,6 +72,11 @@ fake_meta_subnet = dhcp.DictModel(dict(id='bbbbbbbb-1111-2222-bbbbbbbbbbbb',
 
 fake_fixed_ip1 = dhcp.DictModel(dict(id='', subnet_id=fake_subnet1.id,
                                 ip_address='172.9.9.9'))
+fake_fixed_ip2 = dhcp.DictModel(dict(id='', subnet_id=fake_subnet2.id,
+                                ip_address='172.9.8.9'))
+fake_fixed_ip3 = dhcp.DictModel(dict(id='', subnet_id=fake_subnet1.id,
+                                ip_address='172.9.9.1'))
+
 fake_meta_fixed_ip = dhcp.DictModel(dict(id='', subnet=fake_meta_subnet,
                                     ip_address='169.254.169.254'))
 fake_allocation_pool_subnet1 = dhcp.DictModel(dict(id='', start='172.9.9.2',
@@ -91,6 +96,25 @@ fake_port2 = dhcp.DictModel(dict(id='12345678-1234-aaaa-123456789000',
                             network_id='12345678-1234-5678-1234567890ab',
                             fixed_ips=[]))
 
+fake_route_owner_port1 = dhcp.DictModel(
+    dict(id='12345678-1234-aaaa-1234567890ab',
+         device_id='dhcp-12345678-1234-aaaa-1234567890ab',
+         device_owner='network:router_interface',
+         allocation_pools=fake_subnet1_allocation_pools,
+         mac_address='aa:bb:cc:dd:ee:ff',
+         network_id='12345678-1234-5678-1234567890ab',
+         fixed_ips=[fake_fixed_ip3])
+    )
+
+fake_route_owner_port2 = dhcp.DictModel(
+    dict(id='12345678-1234-aaaa-123456789000',
+         device_owner='network:router_interface',
+         mac_address='aa:bb:cc:dd:ee:99',
+         network_id='12345678-1234-5678-1234567890ab',
+         fixed_ips=[fake_fixed_ip2])
+    )
+
+
 fake_meta_port = dhcp.DictModel(dict(id='12345678-1234-aaaa-1234567890ab',
                                 mac_address='aa:bb:cc:dd:ee:ff',
                                 network_id='12345678-1234-5678-1234567890ab',
@@ -103,6 +127,16 @@ fake_network = dhcp.NetModel(True, dict(id='12345678-1234-5678-1234567890ab',
                              admin_state_up=True,
                              subnets=[fake_subnet1, fake_subnet2],
                              ports=[fake_port1]))
+
+fake_network_with_multi_ports = dhcp.NetModel(
+    True,
+    dict(id='12345678-1234-5678-1234567890ab',
+         tenant_id='aaaaaaaa-aaaa-aaaa-aaaaaaaaaaaa',
+         admin_state_up=True,
+         subnets=[fake_subnet1],
+         ports=[fake_route_owner_port1,
+                fake_route_owner_port2])
+    )
 
 isolated_network = dhcp.NetModel(
     True, dict(
@@ -1506,3 +1540,9 @@ class TestNetModel(base.BaseTestCase):
     def test_ns_name_none_namespace(self):
         network = dhcp.NetModel(None, {'id': 'foo'})
         self.assertIsNone(network.namespace)
+
+
+class TestDnsmasq(base.BaseTestCase):
+    def test_get_isolated_subnets(self):
+        subnet = dhcp.Dnsmasq.get_isolated_subnets(fake_network_with_multi_ports)
+        self.assertFalse(subnet[fake_subnet1.id])
