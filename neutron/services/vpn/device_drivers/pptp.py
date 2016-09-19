@@ -130,7 +130,7 @@ class PPTPProcess(object):
                          'kill pptpd process id %(pid)s in root netnamespace'),
                          {'namespace': self.namespace, 'pid': self.pid})
                 # just kill process in root netnamespace
-                utils.execute(cmd)
+                utils.execute(cmd, root_helper=self.root_helper)
 
     def update_ports_status(self):
         changed = {}
