@@ -165,7 +165,7 @@ class BaseSwanProcess():
         """Update config file,  based on current settings for service."""
         config_str = self._gen_config_content(template, vpnservice)
         config_file_name = self._get_config_filename(kind)
-        utils.replace_file(config_file_name, config_str)
+        utils.replace_file(config_file_name, config_str.encode("UTF-8"))
 
     def remove_config(self):
         """Remove whole config file."""
