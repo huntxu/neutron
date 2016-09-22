@@ -139,8 +139,8 @@ class IPsecVPNDriver(service_drivers.VpnDriver):
             try:
                 netaddr.IPAddress(ipsec_site_connection['peer_id'])
             except netaddr.core.AddrFormatError:
-                ipsec_site_connection['peer_id'] = (
-                    '@' + ipsec_site_connection['peer_id'])
+                ipsec_site_connection_dict['peer_id'] = (
+                    '@' + ipsec_site_connection_dict['peer_id'])
             ipsec_site_connection_dict['ikepolicy'] = dict(
                 ipsec_site_connection.ikepolicy)
             ipsec_site_connection_dict['ipsecpolicy'] = dict(
