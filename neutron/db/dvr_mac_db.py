@@ -17,6 +17,7 @@ from oslo.db import exception as db_exc
 
 import sqlalchemy as sa
 
+from neutron.common import constants
 from neutron.common import exceptions as q_exc
 from neutron.common import log
 from neutron.common import utils
@@ -37,6 +38,8 @@ dvr_mac_address_opts = [
                       'DVR instances by Neutron')),
 ]
 cfg.CONF.register_opts(dvr_mac_address_opts)
+
+PORT_NAME_LEN = 14
 
 
 class DistributedVirtualRouterMacAddress(model_base.BASEV2):
@@ -171,3 +174,130 @@ class DVRDbMixin(ext_dvr.DVRMacAddressPluginBase):
             internal_port = internal_gateway_ports[0]
             subnet_info['gateway_mac'] = internal_port['mac_address']
             return subnet_info
+
+    @staticmethod
+    def _get_port_name(port_id, device_owner):
+        prefix = None
+        if device_owner.startswith('compute:'):
+            prefix = 'qvo'
+        elif device_owner == constants.DEVICE_OWNER_LOADBALANCER:
+            prefix = 'tap'
+        if prefix:
+            return (prefix + port_id)[:PORT_NAME_LEN]
+        else:
+            return None
+
+    def _get_dvr_subnets_for_port(self, context, port):
+        ret = []
+        gateway_mac = port['mac_address']
+        network = self.plugin.get_network(context, port['network_id'])
+        if network.get('provider:network_type', '') == 'vlan':
+            for fixed_ip in port['fixed_ips']:
+                subnet_id = fixed_ip['subnet_id']
+                subnet = self.plugin.get_subnet(context, subnet_id)
+                if subnet['ip_version'] == 4 and subnet['gateway_ip']:
+                    cidr = subnet['cidr']
+                    ret.append({'id': subnet_id,
+                                'cidr': cidr,
+                                'gateway_mac': gateway_mac,
+                                'seg_id': network['provider:segmentation_id'],
+                                'ports': {}})
+        return ret
+
+    def _get_dvr_ports_for_subnet(self, context, subnet_id):
+        ret = {}
+        subnet_port_filter = {'fixed_ips': {'subnet_id': [subnet_id]}}
+        ports = self.plugin.get_ports(context, filters=subnet_port_filter)
+        for port in ports:
+            port_id = port['id']
+            device_owner = port['device_owner']
+            mac_address = port['mac_address']
+            binding_host = port['binding:host_id']
+            ip_address = None
+            for ip in port['fixed_ips']:
+                if ip['subnet_id'] == subnet_id:
+                    ip_address = ip['ip_address']
+                    break
+            port_name = self._get_port_name(port_id, device_owner)
+            if port_name is not None and ip_address:
+                ret[port_id] = {'mac': mac_address, 'ip': ip_address,
+                                'host': binding_host, 'name': port_name}
+        return ret
+
+    def _get_dvr_subnets(self, context, router_ports, host):
+        host_affected = False
+        dvr_subnets = {}
+        for router_port in router_ports:
+            subnets = self._get_dvr_subnets_for_port(
+                context, router_port)
+            for subnet in subnets:
+                subnet_id = subnet.pop('id')
+                dvr_subnets[subnet_id] = subnet
+
+        if len(dvr_subnets) < 2:
+            # router is not connected to two or more ipv4 subnets
+            return None
+
+        for subnet_id in dvr_subnets:
+            subnet_ports = self._get_dvr_ports_for_subnet(context, subnet_id)
+            dvr_subnets[subnet_id]['ports'] = subnet_ports
+            host_affected |= (
+                host in set(port['host'] for port in subnet_ports.values()))
+
+        dvr_subnets = {
+            subnet_id: subnet
+            for subnet_id, subnet in dvr_subnets.iteritems()
+            if subnet['ports']
+        }
+
+        if host_affected and len(dvr_subnets) > 1:
+            return dvr_subnets
+        else:
+            return None
+
+    @log.log
+    def get_openflow_ew_dvrs(self, context, host):
+        """
+        Returns:
+        {
+            router1_id: {
+                connected_subnet1_id: {
+                    'cidr': subnet_cidr,
+                    'gateway_mac': subnet_gateway_mac,
+                    'seg_id': network's segmentation id
+                    'ports': {
+                        port1_id: {
+                            'mac': port1_mac,
+                            'ip': port1_ip,
+                            'host': port1_host,
+                            'name': port1_name,
+                        },
+                        port2_id: {...},
+                    },
+                },
+                connected_subnet2_id: {...},
+            },
+            'router2_id': {...},
+        }
+        """
+        dvrs = {}
+        router_ports_filter = {
+            'device_owner': [constants.DEVICE_OWNER_ROUTER_INTF]}
+        router_ports = self.plugin.get_ports(
+            context, filters=router_ports_filter)
+        for router_port in router_ports:
+            router_id = router_port['device_id']
+            if router_id not in dvrs:
+                dvrs[router_id] = [router_port]
+            else:
+                dvrs[router_id].append(router_port)
+
+        dvrs = {
+            router_id: self._get_dvr_subnets(context, router_ports, host)
+            for router_id, router_ports in dvrs.iteritems()
+            if len(router_ports) > 1}
+        dvrs = {
+            router_id: subnets
+            for router_id, subnets in dvrs.iteritems()
+            if subnets is not None}
+        return dvrs

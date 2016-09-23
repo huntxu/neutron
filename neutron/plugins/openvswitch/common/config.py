@@ -59,6 +59,10 @@ ovs_opts = [
     cfg.BoolOpt('use_veth_interconnection', default=False,
                 help=_("Use veths instead of patch ports to interconnect the "
                        "integration bridge to physical bridges.")),
+    cfg.BoolOpt('openflow_ew_dvr', default=False,
+                help=_("Setup OpenFlow flows for inter-subnets L3 traffic.")),
+    cfg.IntOpt('openflow_ew_dvr_sync_interval', default=120,
+               help=_("The interval between two OpenFlow EW DVR syncs.")),
 ]
 
 agent_opts = [

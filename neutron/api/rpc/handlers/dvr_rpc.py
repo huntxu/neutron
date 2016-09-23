@@ -56,14 +56,21 @@ class DVRServerRpcApiMixin(object):
                                        subnet=subnet),
                          version=self.DVR_RPC_VERSION)
 
+    @log.log
+    def get_openflow_ew_dvrs(self, context, host):
+        return self.call(context,
+                         self.make_msg('get_openflow_ew_dvrs', host=host),
+                         version="1.1")
+
 
 class DVRServerRpcCallback(n_rpc.RpcCallback):
     """Plugin-side RPC (implementation) for agent-to-plugin interaction."""
 
     # History
     #   1.0 Initial version
+    #   1.1 Add get_openflow_ew_dvrs
 
-    RPC_API_VERSION = "1.0"
+    RPC_API_VERSION = "1.1"
 
     @property
     def plugin(self):
@@ -90,6 +97,10 @@ class DVRServerRpcCallback(n_rpc.RpcCallback):
         subnet = kwargs.get('subnet')
         return self.plugin.get_subnet_for_dvr(context, subnet)
 
+    def get_openflow_ew_dvrs(self, context, **kwargs):
+        host = kwargs.get('host')
+        LOG.debug("OF-EW DVR Agent requests dvrs on host %s", host)
+        return self.plugin.get_openflow_ew_dvrs(context, host)
 
 class DVRAgentRpcApiMixin(object):
     """Plugin-side RPC (stub) for plugin-to-agent interaction."""

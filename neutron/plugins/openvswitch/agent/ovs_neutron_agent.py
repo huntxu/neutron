@@ -24,6 +24,7 @@ eventlet.monkey_patch()
 
 import netaddr
 from neutron.plugins.openvswitch.agent import ovs_dvr_neutron_agent
+from neutron.plugins.openvswitch.agent import openflow_ew_dvr_agent
 from oslo.config import cfg
 from six import moves
 
@@ -140,7 +141,8 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                  ovsdb_monitor_respawn_interval=(
                      constants.DEFAULT_OVSDBMON_RESPAWN),
                  arp_responder=False,
-                 use_veth_interconnection=False):
+                 use_veth_interconnection=False,
+                 openflow_ew_dvr=False):
         '''Constructor.
 
         :param integ_br: name of the integration bridge.
@@ -163,9 +165,12 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                supported.
         :param use_veth_interconnection: use veths instead of patch ports to
                interconnect the integration bridge to physical bridges.
+        :param openflow_ew_dvr: Optional, setup OpenFlow flows for
+               inter-subnets L3 traffic.
         '''
         super(OVSNeutronAgent, self).__init__()
         self.use_veth_interconnection = use_veth_interconnection
+        self.openflow_ew_dvr = openflow_ew_dvr
         self.veth_mtu = veth_mtu
         self.root_helper = root_helper
         self.available_local_vlans = set(moves.xrange(q_const.MIN_VLAN_TAG,
@@ -214,6 +219,9 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
 
         if tunnel_types:
             self.enable_tunneling = True
+            # Turn off openflow_ew_dvr when tunneling is enabled,
+            # because it is not yet supported.
+            self.openflow_ew_dvr = False
         else:
             self.enable_tunneling = False
         self.local_ip = local_ip
@@ -228,18 +236,29 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
             # here inside the call to setup_tunnel_br
             self.setup_tunnel_br(tun_br)
 
-        self.dvr_agent = ovs_dvr_neutron_agent.OVSDVRNeutronAgent(
-            self.context,
-            self.plugin_rpc,
-            self.int_br,
-            self.tun_br,
-            self.patch_int_ofport,
-            self.patch_tun_ofport,
-            cfg.CONF.host,
-            self.enable_tunneling,
-            self.enable_distributed_routing)
+        if self.openflow_ew_dvr:
+            self.dvr_agent = openflow_ew_dvr_agent.OFEWDVRAgent(
+                self.context,
+                self.plugin_rpc,
+                self.int_br,
+                self.int_ofports,
+                cfg.CONF.host,
+                sync_interval=cfg.CONF.OVS.openflow_ew_dvr_sync_interval)
+        else:
+            self.dvr_agent = ovs_dvr_neutron_agent.OVSDVRNeutronAgent(
+                self.context,
+                self.plugin_rpc,
+                self.int_br,
+                self.tun_br,
+                self.patch_int_ofport,
+                self.patch_tun_ofport,
+                cfg.CONF.host,
+                self.enable_tunneling,
+                self.enable_distributed_routing)
 
         self.dvr_agent.setup_dvr_flows_on_integ_tun_br()
+        if self.openflow_ew_dvr:
+            self.dvr_agent.setup_dvr_flows_on_phys_brs(self.phys_brs)
 
         # Collect additional bridges to monitor
         self.ancillary_brs = self.setup_ancillary_bridges(integ_br, tun_br)
@@ -553,7 +572,7 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                             dl_vlan=lvid,
                             actions="mod_vlan_vid:%s,normal" % segmentation_id)
                 # inbound
-                self.int_br.add_flow(priority=3,
+                self.int_br.add_flow(priority=4,
                                      in_port=self.
                                      int_ofports[physical_network],
                                      dl_vlan=segmentation_id,
@@ -705,7 +724,7 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
         if cur_tag != DEAD_VLAN_TAG:
             self.int_br.set_db_attribute("Port", port.port_name, "tag",
                                          DEAD_VLAN_TAG)
-            self.int_br.add_flow(priority=2, in_port=port.ofport,
+            self.int_br.add_flow(priority=3, in_port=port.ofport,
                                  actions="drop")
 
     def setup_integration_br(self):
@@ -937,7 +956,7 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
             self.phys_ofports[physical_network] = phys_ofport
 
             # block all untranslated traffic between bridges
-            self.int_br.add_flow(priority=2, in_port=int_ofport,
+            self.int_br.add_flow(priority=3, in_port=int_ofport,
                                  actions="drop")
             br.add_flow(priority=2, in_port=phys_ofport, actions="drop")
 
@@ -1392,6 +1411,8 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                                                     self.patch_int_ofport,
                                                     self.patch_tun_ofport)
                 self.dvr_agent.setup_dvr_flows_on_integ_tun_br()
+                if self.openflow_ew_dvr:
+                    self.dvr_agent.setup_dvr_flows_on_phys_brs(self.phys_brs)
             # Notify the plugin of tunnel IP
             if self.enable_tunneling and tunnel_sync:
                 LOG.info(_("Agent tunnel out of sync with plugin!"))
@@ -1473,6 +1494,10 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                     self.updated_ports |= updated_ports_copy
                     sync = True
 
+            # Sync and setup OpenFlow East-West DVR flows
+            if self.openflow_ew_dvr:
+                self.dvr_agent.sync_dvr_ports(self.phys_brs)
+
             # sleep till end of polling interval
             elapsed = (time.time() - start)
             LOG.debug(_("Agent rpc_loop - iteration:%(iter_num)d "
@@ -1528,6 +1553,7 @@ def create_agent_config_map(config):
         l2_population=config.AGENT.l2_population,
         arp_responder=config.AGENT.arp_responder,
         use_veth_interconnection=config.OVS.use_veth_interconnection,
+        openflow_ew_dvr=config.OVS.openflow_ew_dvr,
     )
 
     # If enable_tunneling is TRUE, set tunnel_type to default to GRE
