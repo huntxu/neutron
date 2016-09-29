@@ -112,9 +112,8 @@ class IPsecSiteConnection(model_base.BASEV2,
                                   name="vpn_initiators"), nullable=False)
     auth_mode = sa.Column(sa.String(16), nullable=False)
     psk = sa.Column(sa.String(255), nullable=False)
-    dpd_action = sa.Column(sa.Enum("hold", "clear",
-                                   "restart", "disabled",
-                                   "restart-by-peer", name="vpn_dpd_actions"),
+    dpd_action = sa.Column(sa.Enum("hold", "clear", "restart",
+                                   name="vpn_dpd_actions"),
                            nullable=False)
     dpd_interval = sa.Column(sa.Integer, nullable=False)
     dpd_timeout = sa.Column(sa.Integer, nullable=False)
