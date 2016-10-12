@@ -91,7 +91,7 @@ vpn_supported_initiators = ['bi-directional', 'response-only']
 vpn_supported_encryption_algorithms = ['3des', 'aes-128',
                                        'aes-192', 'aes-256']
 vpn_dpd_supported_actions = [
-    'hold', 'clear', 'restart', 'restart-by-peer', 'disabled'
+    'hold', 'clear', 'restart'
 ]
 vpn_supported_transform_protocols = ['esp', 'ah', 'ah-esp']
 vpn_supported_encapsulation_mode = ['tunnel', 'transport']

@@ -123,6 +123,13 @@ class L3PluginApi(n_rpc.RpcProxy):
                                        fip_statuses=fip_statuses),
                          version='1.1')
 
+    def update_portmapping_statuses(self, context, pm_statuses):
+        """Call the plugin update portmappings' operational statuses."""
+        return self.call(context,
+                         self.make_msg('update_portmapping_statuses',
+                                       pm_statuses=pm_statuses),
+                         version='1.1')
+
     def get_ports_by_subnet(self, context, subnet_id):
         """Retrieve ports by subnet id."""
         return self.call(context,
@@ -252,6 +259,7 @@ class RouterInfo(l3_ha_agent.RouterMixin):
         self.snat_ports = []
         self.floating_ips = set()
         self.floating_ips_dict = {}
+        self.portmappings = set()
         self.root_helper = root_helper
         self.use_namespaces = use_namespaces
         # Invoke the setter for establishing initial SNAT action
@@ -963,6 +971,15 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             ri.perform_snat_action(self._handle_router_snat_rules,
                                    internal_cidrs, interface_name)
 
+        pm_statuses = {}
+        if ex_gw_port:
+            existing_portmappings = ri.portmappings
+            portmappings = self.get_portmappings(ri)
+            self.process_router_portmapping_nat_rules(
+                ri, portmappings, ex_gw_port, interface_name)
+            for pm in portmappings:
+                pm_statuses[pm['id']] = l3_constants.PORTMAPPING_STATUS_ACTIVE
+
         # Process SNAT/DNAT rules for floating IPs
         fip_statuses = {}
         try:
@@ -988,6 +1005,13 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             # Update floating IP status on the neutron server
             self.plugin_rpc.update_floatingip_statuses(
                 self.context, ri.router_id, fip_statuses)
+            # Identify portmappings which were disabled
+            ri.portmappings = set(pm_statuses.keys())
+            for pm_id in existing_portmappings - ri.portmappings:
+                pm_statuses[pm_id] = l3_constants.PORTMAPPING_STATUS_DOWN
+            # Update portmapping status on the neutron server
+            self.plugin_rpc.update_portmapping_statuses(
+                self.context, pm_statuses)
 
         # Update ex_gw_port and enable_snat on the router info cache
         ri.ex_gw_port = ex_gw_port
@@ -1077,6 +1101,19 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                 ri.iptables_manager.ipv4['nat'].add_rule(chain, rule,
                                                          tag='floating_ip')
 
+        ri.iptables_manager.apply()
+
+    def process_router_portmapping_nat_rules(self, ri, portmappings,
+                                             ex_gw_port, interface_name):
+        ri.iptables_manager.ipv4['nat'].clear_rules_by_tag('portmapping')
+        for ip_addr in ex_gw_port['fixed_ips']:
+            ex_gw_ip = ip_addr['ip_address']
+            if netaddr.IPAddress(ex_gw_ip).version == 4:
+                for rule in self.portmapping_forward_rules(
+                    ex_gw_ip, portmappings, interface_name
+                ):
+                    ri.iptables_manager.ipv4['nat'].add_rule(
+                        'portmapping', rule, tag='portmapping')
         ri.iptables_manager.apply()
 
     def _get_external_device_interface_name(self, ri, ex_gw_port,
@@ -1248,6 +1285,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         if ri.router['distributed']:
             floating_ips = [i for i in floating_ips if i['host'] == self.host]
         return floating_ips
+
+    def get_portmappings(self, ri):
+        return ri.router.get(l3_constants.PORTMAPPING_KEY, [])
 
     def _map_internal_interfaces(self, ri, int_port, snat_ports):
         """Return the SNAT port for the given internal interface port."""
@@ -1693,6 +1733,18 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                  (floating_ip, fixed_ip)),
                 ('float-snat', '-s %s -j SNAT --to %s' %
                  (fixed_ip, floating_ip))]
+
+    def portmapping_forward_rules(self, ex_gw_ip, portmappings,
+                                  interface_name):
+        rules = []
+        for portmapping in portmappings:
+            protocol = portmapping['protocol']
+            dport = portmapping['router_port']
+            to = '%s:%s' % (portmapping['destination_ip'],
+                            portmapping['destination_port'])
+            rules.append('-d %s -p %s --dport %s -j DNAT --to %s' %
+                         (ex_gw_ip, protocol, dport, to))
+        return rules
 
     def router_deleted(self, context, router_id):
         """Deal with router deletion RPC message."""

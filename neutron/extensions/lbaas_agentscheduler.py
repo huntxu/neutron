@@ -45,6 +45,37 @@ class PoolSchedulerController(wsgi.Controller):
         return lbaas_plugin.list_pools_on_lbaas_agent(
             request.context, kwargs['agent_id'])
 
+    def _get_lbaas_plugin(self):
+        lbaas_plugin = manager.NeutronManager.get_service_plugins().get(
+            plugin_const.LOADBALANCER)
+        if not lbaas_plugin:
+            msg = _('The resource could not be found.')
+            raise webob.exc.HTTPNotFound(msg)
+        return lbaas_plugin
+
+    def create(self, request, body, **kwargs):
+        lbaas_plugin = self._get_lbaas_plugin()
+
+        policy.enforce(request.context,
+                       "create_%s" % LOADBALANCER_POOL,
+                       {},
+                       plugin=lbaas_plugin)
+        agent_id = kwargs['agent_id']
+        pool_id = body['pool_id']
+        return lbaas_plugin.add_pool_to_lbaas_agent(
+            request.context, agent_id, pool_id)
+
+    def delete(self, request, id, **kwargs):
+        lbaas_plugin = self._get_lbaas_plugin()
+
+        policy.enforce(request.context,
+                       "delete_%s" % LOADBALANCER_POOL,
+                       {},
+                       plugin=lbaas_plugin)
+        agent_id = kwargs['agent_id']
+        return lbaas_plugin.remove_pool_from_lbaas_agent(
+            request.context, agent_id, id)
+
 
 class LbaasAgentHostingPoolController(wsgi.Controller):
     def index(self, request, **kwargs):

@@ -360,7 +360,9 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         return interfaces
 
     def get_sync_data(self, context, router_ids=None, active=None):
-        routers, interfaces, floating_ips = self._get_router_info_list(
+        (
+            routers, interfaces, floating_ips, portmappings
+        ) = self._get_router_info_list(
             context, router_ids=router_ids, active=active,
             device_owners=[l3_const.DEVICE_OWNER_ROUTER_INTF,
                            DEVICE_OWNER_DVR_INTERFACE])
@@ -370,6 +372,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         routers_dict = self._process_routers(context, routers)
         self._process_floating_ips(context, routers_dict, floating_ips)
         self._process_interfaces(routers_dict, interfaces)
+        self._process_portmappings(routers_dict, portmappings)
         return routers_dict.values()
 
     def get_vm_port_hostid(self, context, port_id, port=None):

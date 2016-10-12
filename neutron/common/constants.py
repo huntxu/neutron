@@ -29,6 +29,10 @@ FLOATINGIP_STATUS_ACTIVE = 'ACTIVE'
 FLOATINGIP_STATUS_DOWN = 'DOWN'
 FLOATINGIP_STATUS_ERROR = 'ERROR'
 
+PORTMAPPING_STATUS_ACTIVE = 'ACTIVE'
+PORTMAPPING_STATUS_DOWN = 'DOWN'
+PORTMAPPING_STATUS_ERROR = 'ERROR'
+
 DEVICE_OWNER_ROUTER_HA_INTF = "network:router_ha_interface"
 DEVICE_OWNER_ROUTER_INTF = "network:router_interface"
 DEVICE_OWNER_ROUTER_GW = "network:router_gateway"
@@ -48,6 +52,7 @@ HA_ROUTER_STATE_KEY = '_ha_state'
 METERING_LABEL_KEY = '_metering_labels'
 FLOATINGIP_AGENT_INTF_KEY = '_floatingip_agent_interfaces'
 SNAT_ROUTER_INTF_KEY = '_snat_router_interfaces'
+PORTMAPPING_KEY = '_portmappings'
 
 HA_NETWORK_NAME = 'HA network tenant %s'
 HA_SUBNET_NAME = 'HA subnet tenant %s'
