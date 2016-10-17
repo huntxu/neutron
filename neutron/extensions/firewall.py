@@ -204,6 +204,9 @@ def _validate_port_range(data, key_specs=None):
             msg = _("Invalid port '%s'") % p
             LOG.debug(msg)
             return msg
+    if len(ports) > 2 or ports[0] > ports[-1]:
+        msg = _("Invalid port range '%s'") % ports
+        return msg
 
 
 def _validate_ip_or_subnet_or_none(data, valid_values=None):
