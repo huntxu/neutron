@@ -172,7 +172,7 @@ class VPNDriverPlugin(VPNPlugin, vpn_db.VPNPluginRpcDbMixin):
             context, ipsec_site_connection['ipsec_site_connection'])
         if not driver.service_type == IPSEC:
             raise vpn_ext.BadProviderForIPsec(
-                vpnservice_id=ipsec_site_connection['vpnservice_id'])
+                vpnservice_id=ipsec_site_connection['ipsec_site_connection']['vpnservice_id'])
         validator = driver.validator
         ipsec_site_connection = super(
             VPNDriverPlugin, self).create_ipsec_site_connection(
