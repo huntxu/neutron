@@ -27,6 +27,7 @@ from neutron.common import utils
 from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_db
 from neutron.db import l3_hamode_db
+from neutron.extensions import l3agentscheduler
 from neutron.openstack.common.gettextutils import _LE
 from neutron.openstack.common import log as logging
 
@@ -204,7 +205,14 @@ class L3Scheduler(object):
                         plugin, context, router['id'],
                         router['tenant_id'], l3_agent)
             else:
-                self.bind_router(context, router['id'], l3_agent)
+                try:
+                    with context.session.begin(subtransactions=True):
+                        if plugin.check_agent_router_scheduling_needed(
+                            context, l3_agent, router
+                        ):
+                            self.bind_router(context, router['id'], l3_agent)
+                except l3agentscheduler.RouterHostedByL3Agent:
+                    continue
 
     def bind_router(self, context, router_id, chosen_agent):
         """Bind the router to the l3 agent which has been chosen."""
