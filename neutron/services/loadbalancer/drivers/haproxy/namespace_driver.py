@@ -180,6 +180,9 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         return False
 
     def get_stats(self, pool_id):
+        if pool_id not in self.pool_to_port_id:
+            return {}
+
         socket_path = self._get_state_file_path(pool_id, 'sock', False)
         TYPE_BACKEND_REQUEST = 2
         TYPE_SERVER_REQUEST = 4
