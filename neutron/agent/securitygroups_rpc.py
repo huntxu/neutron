@@ -41,7 +41,14 @@ security_group_opts = [
     cfg.BoolOpt(
         'enable_ipset',
         default=True,
-        help=_('Use ipset to speed-up the iptables based security groups.'))
+        help=_('Use ipset to speed-up the iptables based security groups.')),
+    cfg.ListOpt(
+        'private_nets',
+        default=[
+            '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',  # RFC 1918
+            '169.254.0.0/16'  # RFC 3927
+        ],
+        help=_('IP addresses that should be recognized as private.'))
 ]
 cfg.CONF.register_opts(security_group_opts, 'SECURITYGROUP')
 

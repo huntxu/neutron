@@ -24,8 +24,8 @@ class IpsetManager(object):
         self.namespace = namespace
 
     @utils.synchronized('ipset', external=True)
-    def create_ipset_chain(self, chain_name, ethertype):
-        cmd = ['ipset', 'create', '-exist', chain_name, 'hash:ip', 'family',
+    def create_ipset_chain(self, chain_name, ethertype, typename='hash:ip'):
+        cmd = ['ipset', 'create', '-exist', chain_name, typename, 'family',
                self._get_ipset_chain_type(ethertype)]
         self._apply(cmd)
 

@@ -36,6 +36,7 @@ DIRECTION_IP_PREFIX = {'ingress': 'source_ip_prefix',
                        'egress': 'dest_ip_prefix'}
 IPSET_DIRECTION = {INGRESS_DIRECTION: 'src',
                    EGRESS_DIRECTION: 'dst'}
+PRIVATE_IPSET_NAME = 'ES-private-nets'
 LINUX_DEV_LEN = 14
 IPSET_CHAIN_LEN = 20
 IPSET_CHANGE_BULK_THRESHOLD = 10
@@ -68,6 +69,13 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         self.pre_sg_members = None
         self.ipset_chains = {}
         self.enable_ipset = cfg.CONF.SECURITYGROUP.enable_ipset
+        self.private_nets = cfg.CONF.SECURITYGROUP.private_nets
+        if self.enable_ipset:
+            self.ipset.create_ipset_chain(
+                PRIVATE_IPSET_NAME, constants.IPv4, typename='hash:net')
+            for private_net in self.private_nets:
+                self.ipset.add_member_to_ipset_chain(
+                    PRIVATE_IPSET_NAME, private_net)
 
     @property
     def ports(self):
@@ -175,11 +183,6 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
             # Only meter instances' ports
             return '$' + chain_name
         # Only support IPv4
-        PRIVATE_INTERNET_ADDRESSES = [
-            '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
-            '169.254.169.254/32']
-        METER_IPADDR_DIRECTION = {INGRESS_DIRECTION: 's',
-                                  EGRESS_DIRECTION: 'd'}
         chains = self._metering_chain_names(port, direction)
         for m_chain_name in chains:
             self.iptables.ipv4['filter'].add_chain(m_chain_name, wrap=False)
@@ -191,11 +194,22 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         jump_rule = '-j %s' % orig_chain_name
         self.iptables.ipv4['filter'].add_rule(metering_chain, jump_rule,
                                               wrap=False)
-        # Jump to the counting chain
-        counting_rules = ['-%s %s -j %s' % (METER_IPADDR_DIRECTION[direction],
-                                            private_address,
-                                            counting_in_chain)
-                          for private_address in PRIVATE_INTERNET_ADDRESSES]
+        # Jump to the counting chains
+        counting_rules = []
+        tmp_direction = IPSET_DIRECTION[direction]
+        if self.enable_ipset:
+            counting_rules += [
+                '-m set --match-set %s %s -j %s' % (
+                    PRIVATE_IPSET_NAME, tmp_direction, counting_in_chain
+                )
+            ]
+        else:
+            counting_rules += [
+                '--%s %s -j %s' % (
+                    tmp_direction, private_net, counting_in_chain
+                )
+                for private_net in self.private_nets
+            ]
         counting_rules += ['-j %s' % counting_chain]
         for rule in counting_rules:
             self.iptables.ipv4['filter'].add_rule(metering_chain, rule,
