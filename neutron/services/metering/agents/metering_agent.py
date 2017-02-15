@@ -244,7 +244,20 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
                                    'remove_metering_label')
 
 
-class MeteringAgentWithStateReport(MeteringAgent):
+class EsMeteringAgent(MeteringAgent):
+
+    def add_es_metering_label(self, context, routers):
+        LOG.debug(_("Creating a EayunStack metering label from agent"))
+        return self._invoke_driver(context, routers, 'add_es_metering_label')
+
+    def remove_es_metering_label(self, context, routers):
+        self._add_metering_infos()
+        LOG.debug(_("Delete a EayunStack metering label from agent"))
+        return self._invoke_driver(context, routers,
+                                   'remove_es_metering_label')
+
+
+class MeteringAgentWithStateReport(EsMeteringAgent):
 
     def __init__(self, host, conf=None):
         super(MeteringAgentWithStateReport, self).__init__(host=host,

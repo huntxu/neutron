@@ -93,3 +93,9 @@ class MeteringAgentNotifyAPI(n_rpc.RpcProxy):
 
     def remove_metering_label(self, context, routers):
         self._notification(context, 'remove_metering_label', routers)
+
+    def add_es_metering_label(self, context, routers):
+        self._notification(context, 'add_es_metering_label', routers)
+
+    def remove_es_metering_label(self, context, routers):
+        self._notification(context, 'remove_es_metering_label', routers)

@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 NS_PREFIX = 'qrouter-'
 WRAP_NAME = 'neutron-meter'
 EXTERNAL_DEV_PREFIX = 'qg-'
-TOP_CHAIN = "neutron-filter-top"
+TOP_CHAIN = WRAP_NAME + "-local"
 RULE = '-r-'
 LABEL = '-l-'
 
@@ -75,12 +75,12 @@ class RouterWithMetering(object):
             root_helper=self.root_helper,
             namespace=self.ns_name,
             binary_name=WRAP_NAME,
+            state_less=True,
             use_ipv6=ipv6_utils.is_enabled())
-        # Clear tables/chains/rules that has nothing to do with metering
-        self.iptables_manager.ipv4 = {
-            'filter': iptables_manager.IptablesTable(binary_name=WRAP_NAME)}
-        self.iptables_manager.ipv6 = {}
         self.metering_labels = {}
+
+    def iter_metering_labels(self):
+        return self.metering_labels.items()
 
 
 class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
@@ -272,7 +272,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                 continue
 
             router_to_reconfigure = False
-            for label_id, label in rm.metering_labels.items():
+            for label_id, label in rm.iter_metering_labels():
                 try:
                     chain = iptables_manager.get_chain_name(WRAP_NAME +
                                                             LABEL +

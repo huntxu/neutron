@@ -41,3 +41,11 @@ class NoopMeteringDriver(abstract_driver.MeteringAbstractDriver):
     @log.log
     def get_traffic_counters(self, context, routers):
         pass
+
+    @log.log
+    def add_es_metering_label(self, context, routers):
+        pass
+
+    @log.log
+    def remove_es_metering_label(self, context, routers):
+        pass
