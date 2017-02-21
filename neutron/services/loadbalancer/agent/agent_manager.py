@@ -332,3 +332,27 @@ class LbaasAgentManager(n_rpc.RpcCallback, periodic_task.PeriodicTasks):
                              pool_id)
                     self._destroy_pool(pool_id)
             LOG.info(_("Agent_updated by server side %s!"), payload)
+
+    def create_l7policy(self, context, l7policy):
+        driver = self._get_driver(l7policy['pool_id'])
+        driver.create_l7policy(l7policy)
+
+    def update_l7policy(self, context, old_l7policy, l7policy):
+        driver = self._get_driver(l7policy['pool_id'])
+        driver.update_l7policy(old_l7policy, l7policy)
+
+    def delete_l7policy(self, context, l7policy):
+        driver = self._get_driver(l7policy['pool_id'])
+        driver.delete_l7policy(l7policy)
+
+    def update_l7rule(self, context, old_rule, rule, pool_id):
+        driver = self._get_driver(pool_id)
+        driver.update_l7rule(old_rule, rule. pool_id)
+
+    def create_l7policy_l7rule(self, context, l7policy):
+        driver = self._get_driver(l7policy['pool_id'])
+        driver.create_l7policy_l7rule(l7policy)
+
+    def delete_l7policy_l7rule(self, context, l7policy):
+        driver = self._get_driver(l7policy['pool_id'])
+        driver.delete_l7policy_l7rule(l7policy)

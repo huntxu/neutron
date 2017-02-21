@@ -119,7 +119,21 @@ class LoadBalancerCallbacks(n_rpc.RpcCallback):
             ]
             retval['driver'] = (
                 self.plugin.drivers[pool.provider.provider_name].device_driver)
-
+            # policy and rules
+            retval['l7policies'] = [
+                {
+                    'policy': self.plugin._make_policy_dict(policy),
+                    'rules': [
+                        self.plugin._make_l7rule_dict(
+                            policy_rule_assoc.rule
+                        )
+                        for policy_rule_assoc in policy.policy_rule_assoc
+                        if policy_rule_assoc.rule.admin_state_up
+                    ]
+                }
+                for policy in pool.policies
+                if policy.admin_state_up
+            ]
             return retval
 
     def pool_deployed(self, context, pool_id):
@@ -314,6 +328,32 @@ class LoadBalancerAgentApi(n_rpc.RpcProxy):
                           {'payload': {'admin_state_up': admin_state_up}},
                           host)
 
+    def create_l7policy(self, context, policy, host):
+        return self._cast(context, 'create_l7policy',
+                          {'l7policy': policy}, host)
+
+    def update_l7policy(self, context, old_policy, policy, host):
+        return self._cast(context, 'update_l7policy',
+                          {'l7policy': policy,
+                           'old_l7policy': old_policy}, host)
+
+    def delete_l7policy(self, context, policy, host):
+        return self._cast(context, 'delete_l7policy',
+                          {'l7policy': policy}, host)
+
+    def update_l7rule(self, context, old_rule, rule, pool_id, host):
+        return self._cast(context, 'update_l7rule',
+                          {'l7rule': rule, 'old_l7rule': old_rule,
+                           'pool_id': pool_id}, host)
+
+    def create_l7policy_l7rule(self, context, policy, host):
+        return self._cast(context, 'create_l7policy_l7rule',
+                          {'l7policy': policy}, host)
+
+    def delete_l7policy_l7rule(self, context, policy, host):
+        return self._cast(context, 'delete_l7policy_l7rule',
+                          {'l7policy': policy}, host)
+
 
 class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
 
@@ -490,3 +530,41 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         self.plugin.update_status(context, loadbalancer_db.Pool,
                                   pool['id'], constants.DOWN)
         self.agent_rpc.delete_pool(context, pool, agent['host'])
+
+    def create_l7policy(self, context, policy, pool_id):
+        agent = self.get_pool_agent(context, pool_id)
+        self.agent_rpc.create_l7policy(context, policy, agent['host'])
+
+    def update_l7policy(self, context, old_policy, policy):
+        # only update l7policy
+        if ((old_policy['pool_id'] or policy['pool_id']) and
+                old_policy['pool_id'] == policy['pool_id']):
+            agent = self.get_pool_agent(context, policy['pool_id'])
+            return self.agent_rpc.update_l7policy(context, policy,
+                                                  agent['host'])
+
+        # l7policy pool change, delete and create
+        if old_policy['pool_id']:
+            old_agent = self.get_pool_agent(context, old_policy['pool_id'])
+            self.agent_rpc.delete_l7policy(context, old_policy,
+                                           old_agent['host'])
+        if policy['pool_id']:
+            agent = self.get_pool_agent(context, policy['pool_id'])
+            self.agent_rpc.create_l7policy(context, policy, agent['host'])
+
+    def delete_l7policy(self, context, policy):
+        agent = self.get_pool_agent(context, policy['pool_id'])
+        self.agent_rpc.delete_l7policy(context, policy, agent['host'])
+
+    def update_l7rule(self, context, old_rule, rule, pool_id):
+        agent = self.get_pool_agent(context, pool_id)
+        self.agent_rpc.update_l7rule(context, old_rule, rule,
+                                     pool_id, agent['host'])
+
+    def create_l7policy_l7rule(self, context, policy, pool_id):
+        agent = self.get_pool_agent(context, pool_id)
+        self.agent_rpc.create_l7policy_l7rule(context, policy, agent['host'])
+
+    def delete_l7policy_l7rule(self, context, policy, pool_id):
+        agent = self.get_pool_agent(context, pool_id)
+        self.agent_rpc.delete_l7policy_l7rule(context, policy, agent['host'])

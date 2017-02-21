@@ -39,7 +39,8 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
     """
     supported_extension_aliases = ["lbaas",
                                    "lbaas_agent_scheduler",
-                                   "service-type"]
+                                   "service-type",
+                                   "lbaas_l7"]
 
     # lbaas agent notifiers to handle agent update operations;
     # can be updated by plugin drivers while loading;
@@ -320,3 +321,157 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         if provider not in self.drivers:
             raise pconf.ServiceProviderNotFound(
                 provider=provider, service_type=constants.LOADBALANCER)
+
+    def _check_policy_action_key_value(self, policy):
+        def _check_block_key_value(p):
+            if p['key'] or p['value']:
+                return False
+            return True
+
+        def _check_redirect_key_value(p):
+            # TODO verify url value
+            if p['key'] != 'url' or p['value'] is None:
+                return False
+            return True
+
+        def _check_addheader_key_value(p):
+            # Current, only support cookie key
+            def _value_is_not_none(value):
+                return value is not None
+
+            key_value_check_map = {
+                "Set-Cookie": _value_is_not_none,
+            }
+
+            if p['key'] in key_value_check_map:
+                return key_value_check_map[p['key']](p['value'])
+            return False
+
+        action_check_map = {
+            'block': _check_block_key_value,
+            'redirect': _check_redirect_key_value,
+            'addHeader': _check_addheader_key_value,
+        }
+
+        # check by action
+        if not action_check_map.get(policy['action'])(policy):
+            raise loadbalancer_l7.L7policyActionKeyValueNotSupport(
+                l7policy_action=p['action'],
+                l7policy_key=p['key'],
+                l7policy_value=p['value']
+            )
+
+    def create_l7policy(self, context, policy):
+        p = policy['l7policy']
+        # check policy action and key/value
+        self._check_policy_action_key_value(p)
+        p = super(LoadBalancerPlugin, self).create_l7policy(context, policy)
+        if p['pool_id']:
+            driver = self._get_driver_for_pool(context, p['pool_id'])
+            driver.create_l7policy(context, p, p['pool_id'])
+        return p
+
+    def update_l7policy(self, context, id, policy):
+        # TODO only allow update for same pool provider
+        old_policy = self.get_l7policy(context, id)
+        update_policy = super(LoadBalancerPlugin, self).update_l7policy(
+            context, policy)
+        if update_policy['pool_id'] or old_policy['pool_id']:
+            driver = self._get_driver_for_pool(context,
+                                               update_policy['pool_id'])
+            driver.update_l7policy(context, old_policy, update_policy)
+        return update_policy
+
+    def delete_l7policy(self, context, id):
+        policy = self.get_l7policy(id)
+        super(LoadBalancerPlugin, self).delete_l7policy(context, id)
+        if policy['pool_id']:
+            driver = self._get_driver_for_pool(context, policy['pool_id'])
+            driver.delete_l7policy(context, policy)
+
+    def _check_rule_type_key_value(self, context, r):
+        def _check_backend_server_key_value(rule):
+            if rule['key'] == 'serverId' and rule['value']:
+                # check backend member if exist
+                try:
+                    self.get_member(context, rule['value'])
+                    return True
+                except loadbalancer.MemberNotFound:
+                    pass
+            return False
+
+        rule_type_check_map = {
+            'backendServerId': _check_backend_server_key_value,
+        }
+
+        if not rule_type_check_map.get(r['type'])(r):
+            raise loadbalancer_l7.L7ruleTypeKeyValueNotSupport(
+                l7rule_type=r['type'],
+                l7rule_key=r['key'],
+                l7rule_value=r['value']
+            )
+
+    def _check_rule_compare_type_and_value(self, r):
+        def _check_integereq(r):
+            try:
+                int(r['compare_value'])
+            except ValueError:
+                return False
+            return True
+
+        rule_compare_type_value_map = {
+            'integerEq': _check_integereq,
+        }
+
+        if not rule_compare_type_value_map.get(r['compare_type'])(r):
+            raise loadbalancer_l7.L7ruleCompareTypeValueNotSupport(
+                l7rule_compare_type=r['compare_type'],
+                l7rule_compare_value=r['compare_value']
+            )
+
+    def create_l7rule(self, context, rule):
+        r = rule['rule']
+        self._check_rule_type_key_value(context, r)
+        self._check_rule_compare_type_and_value(r)
+        return super(LoadBalancerPlugin, self).create_l7rule(context, rule)
+
+    def update_l7rule(self, context, id, rule):
+        rule_res = self.get_rule(id)
+        if 'compare_value' in rule:
+            rule_res['compare_value'] = rule['compare_value']
+            self._check_rule_compare_type_and_value(rule_res)
+
+        if 'value' in rule:
+            rule_res['value'] = rule['value']
+            self._check_rule_type_key_value(context, rule_res)
+        res = super(LoadBalancerPlugin, self).update_l7rule(context, id, rule)
+
+        with context.session.begin(subtransactions=True):
+            qry = context.session.query(
+                ldb.L7policyRuleAssociation
+            ).filter_by(rule_id=id).join(ldb.L7policy)
+            for assoc in qry:
+                if assoc.policy['pool_id']:
+                    driver = self._get_driver_for_pool(context,
+                                                       assoc.policy['pool_id'])
+                    driver.update_l7rule(context, rule_res, res,
+                                         assoc.policy['pool_id'])
+        return res
+
+    def create_l7policy_l7rule(self, context, rule, l7policy_id):
+        res = super(LoadBalancerPlugin, self).create_l7policy_l7rule(
+            context, rule, l7policy_id)
+
+        policy = self.get_l7policy(context, l7policy_id)
+        if policy['pool_id']:
+            driver = self._get_driver_for_pool(context, policy['pool_id'])
+            driver.create_l7policy_l7rule(context, policy, policy['pool_id'])
+        return res
+
+    def delete_l7policy_l7rule(self, context, id, l7policy_id):
+        super(LoadBalancerPlugin, self).delete_l7policy_l7rule(
+            context, id, l7policy_id)
+        policy = self.get_l7policy(context, l7policy_id)
+        if policy['pool_id']:
+            driver = self._get_driver_for_pool(policy['pool_id'])
+            driver.delete_l7policy_l7rule(context, policy, policy['pool_id'])

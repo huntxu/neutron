@@ -418,6 +418,24 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         # clean up unknown lbaas namespace
         self._clean_up_unknown_namespace()
 
+    def create_l7policy(self, l7policy):
+        self._refresh_device(l7policy['pool_id'])
+
+    def update_l7policy(self, old_l7policy, l7policy):
+        self._refresh_device(l7policy['pool_id'])
+
+    def delete_l7policy(self, l7policy):
+        self._refresh_device(l7policy['pool_id'])
+
+    def update_l7rule(self, old_rule, rule, pool_id):
+        self._refresh_device(pool_id)
+
+    def create_l7policy_l7rule(self, l7policy):
+        self._refresh_device(l7policy['pool_id'])
+
+    def delete_l7policy_l7rule(self, l7policy):
+        self._refresh_device(l7policy['pool_id'])
+
 
 # NOTE (markmcclain) For compliance with interface.py which expects objects
 class Wrap(object):

@@ -46,8 +46,24 @@ STATS_MAP = {
     constants.STATS_RESPONSE_ERRORS: 'eresp'
 }
 
+ACL_TYPE_MAP = {
+    'backServerId': 'be_id %(value)s',
+}
+
+ACL_COMPARE_MAP = {
+    'integerEq': 'eq %(compare_value)s',
+}
+
+POLICY_ACTION_MAP = {
+    'block': 'block',
+    'redirect': 'redirect location %(value)s',
+    'addHeader': 'rspadd %(value)s',
+}
+
 ACTIVE_PENDING_STATUSES = qconstants.ACTIVE_PENDING_STATUSES
 INACTIVE = qconstants.INACTIVE
+ACL_RULE_ID_LENGTH = 10
+ACL_RULE_NAME_LENGTH = 12
 
 
 def save_config(conf_path, logical_config, socket_path=None,
@@ -128,6 +144,55 @@ def _sort_members_by_priority_or_ip_port(members):
     return members
 
 
+def _get_acl_name(rule):
+    return ('acl_' + rule['id'])[:ACL_RULE_NAME_LENGTH]
+
+
+def _get_acl_member_id(rule):
+    return int(('0x' + rule['value'])[:ACL_RULE_ID_LENGTH])
+
+
+def _build_acl(rule):
+    type_value_convert_map = {
+        'backServerId': _get_acl_member_id,
+    }
+
+    acl_name = 'acl %s' % _get_acl_name(rule)
+
+    rule_updater = type_value_convert_map.get(rule['type'], lambda rule: rule)
+    rule_updater(rule)
+
+    acl_match = ACL_TYPE_MAP[rule['type']] % rule
+    acl_compare = ACL_COMPARE_MAP[rule['compare_type']] % rule
+
+    return ' '.jion([acl_name, acl_match, acl_compare])
+
+
+def _build_policy_action(policy, rule):
+    kws = {
+        'value': policy['value'].replace(' ', '\ ') if policy['value'] else ''
+    }
+    acl = POLICY_ACTION_MAP[policy['action']] % kws
+
+    # add condition
+    acl += ' if %s' % _get_acl_name(rule)
+    return acl
+
+
+def _build_policy_and_acl(config):
+    opts = []
+    need_add_server_id = False
+    policies = config['l7policies']
+    for policy in policies:
+        for rule in policy['rules']:
+            if rule['type'] == 'backServerId':
+                need_add_server_id = True
+
+            opts.append(_build_acl(rule))
+            opts.append(_build_policy_action(policy['policy'], rule))
+    return need_add_server_id, opts
+
+
 def _build_backend(config):
     protocol = config['pool']['protocol']
     lb_method = config['pool']['lb_method']
@@ -150,6 +215,9 @@ def _build_backend(config):
 
     # backup members need resort
     config['members'] = _sort_members_by_priority_or_ip_port(config['members'])
+    # policy and acls
+    need_server_id, policy_opts = _build_policy_and_acl(config)
+    opts.extend(policy_opts)
 
     # add the members
     for member in config['members']:
@@ -160,6 +228,10 @@ def _build_backend(config):
                        'weight %(weight)s') % member) + server_addon
             if member['priority'] < 256:
                 server += ' backup'
+
+            if need_server_id:
+                server += ' id %d' % _get_acl_member_id(member['id'])
+
             if _has_http_cookie_persistence(config):
                 server += ' cookie %d' % config['members'].index(member)
             opts.append(server)
