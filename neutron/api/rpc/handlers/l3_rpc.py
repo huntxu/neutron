@@ -105,6 +105,9 @@ class L3RpcCallback(n_rpc.RpcCallback):
             for interface in router.get(constants.INTERFACE_KEY, []):
                 self._ensure_host_set_on_port(context, host,
                                               interface, router['id'])
+            for fip in router.get(constants.FLOATINGIP_KEY, []):
+                self._ensure_host_set_on_port(context, host, fip['port'],
+                                              router['id'])
             interface = router.get(constants.HA_INTERFACE_KEY)
             if interface:
                 self._ensure_host_set_on_port(context, host, interface,

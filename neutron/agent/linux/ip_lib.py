@@ -197,8 +197,10 @@ class IPWrapper(SubProcessBase):
 
 
 class IpRule(IPWrapper):
-    def add_rule_from(self, ip, table, rule_pr):
-        args = ['add', 'from', ip, 'lookup', table, 'priority', rule_pr]
+    def add_rule_from(self, ip, table, rule_pr=None):
+        args = ['add', 'from', ip, 'lookup', table]
+        if rule_pr:
+            args += ['priority', rule_pr]
         ip = self._as_root('', 'rule', tuple(args))
         return ip
 
@@ -206,6 +208,21 @@ class IpRule(IPWrapper):
         args = ['del', 'priority', rule_pr]
         ip = self._as_root('', 'rule', tuple(args))
         return ip
+
+    def delete_rule_from(self, ip, table):
+        args = ['del', 'from', ip]
+        ip = self._as_root('', 'rule', tuple(args))
+        return ip
+
+    def list_from_rules(self):
+        ret = set()
+        args = ['list']
+        for line in self._as_root('', 'rule', tuple(args)).split('\n'):
+            parts = line.strip().split()
+            if not parts or parts[1] != 'from' or parts[2] == 'all':
+                continue
+            ret.add(parts[2])
+        return ret
 
 
 class IPDevice(SubProcessBase):
@@ -413,11 +430,19 @@ class IpRouteCommand(IpDeviceCommandBase):
 
         return [x for x in iterate_routes()]
 
-    def add_onlink_route(self, cidr):
-        self._as_root('replace', cidr, 'dev', self.name, 'scope', 'link')
+    def add_onlink_route(self, cidr, name=None, src=None, table=None):
+        args = ['replace', cidr, 'dev', name or self.name, 'scope', 'link']
+        if src:
+            args += ['src', src]
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
 
-    def delete_onlink_route(self, cidr):
-        self._as_root('del', cidr, 'dev', self.name, 'scope', 'link')
+    def delete_onlink_route(self, cidr, name=None, table=None):
+        args = ['del', cidr, 'dev', name or self.name, 'scope', 'link']
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
 
     def get_gateway(self, scope=None, filters=None):
         if filters is None:
@@ -490,6 +515,12 @@ class IpRouteCommand(IpDeviceCommandBase):
 
     def delete_route(self, cidr, ip, table=None):
         args = ['del', cidr, 'via', ip, 'dev', self.name]
+        if table:
+            args += ['table', table]
+        self._as_root(*args)
+
+    def flush_routes(self, table=None):
+        args = ['flush']
         if table:
             args += ['table', table]
         self._as_root(*args)

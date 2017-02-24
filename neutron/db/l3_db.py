@@ -701,7 +701,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
         router_port = routerport_qry.first()
 
-        if router_port and router_port.router.gw_port:
+        if router_port:
             return router_port.router.id
 
         raise l3.ExternalGatewayForFloatingIPNotFound(
@@ -1137,7 +1137,17 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         """Query floating_ips that relate to list of router_ids."""
         if not router_ids:
             return []
-        return self.get_floatingips(context, {'router_id': router_ids})
+        fip_dict = {}
+        for fip in self.get_floatingips(context, {'router_id': router_ids}):
+            fip_dict[fip['id']] = fip
+        if not fip_dict:
+            return []
+        port_filters = {'device_id': fip_dict.keys()}
+        ports = self._core_plugin.get_ports(context, port_filters)
+        self._populate_subnet_for_ports(context, ports)
+        for port in ports:
+            fip_dict[port['device_id']]['port'] = port
+        return fip_dict.values()
 
     def _get_sync_portmappings(self, context, router_ids):
         """Query portmappings that relate to list of router_ids."""
