@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 NS_PREFIX = 'qrouter-'
 WRAP_NAME = 'neutron-meter'
 EXTERNAL_DEV_PREFIX = 'qg-'
-TOP_CHAIN = WRAP_NAME + "-local"
+TOP_CHAIN = "neutron-filter-top"
 RULE = '-r-'
 LABEL = '-l-'
 
@@ -76,6 +76,10 @@ class RouterWithMetering(object):
             namespace=self.ns_name,
             binary_name=WRAP_NAME,
             use_ipv6=ipv6_utils.is_enabled())
+        # Clear tables/chains/rules that has nothing to do with metering
+        self.iptables_manager.ipv4 = {
+            'filter': iptables_manager.IptablesTable(binary_name=WRAP_NAME)}
+        self.iptables_manager.ipv6 = {}
         self.metering_labels = {}
 
 

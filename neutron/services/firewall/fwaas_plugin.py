@@ -60,7 +60,12 @@ class FirewallCallbacks(n_rpc.RpcCallback):
         """Agent uses this to indicate firewall is deleted."""
         LOG.debug(_("firewall_deleted() called"))
         with context.session.begin(subtransactions=True):
-            fw_db = self.plugin._get_firewall(context, firewall_id)
+            try:
+                fw_db = self.plugin._get_firewall(context, firewall_id)
+            except fw_ext.FirewallNotFound:
+                # in this case, firewall has been deleted by other agent
+                return
+
             # allow to delete firewalls in ERROR state
             if fw_db.status in (const.PENDING_DELETE, const.ERROR):
                 self.plugin.delete_db_firewall_object(context, firewall_id)

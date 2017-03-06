@@ -216,14 +216,14 @@ class QosDb(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             # Need to check
             try:
                 if target_type == 'port':
-                    target = self._core_plugin.get_port(context, target_id)
+                    target = self._core_plugin._get_port(context, target_id)
                     if not target['device_owner'].startswith('compute'):
                         raise ext_qos.QosInvalidPortType(
                             port_id=target_id,
                             port_type=target['device_owner'])
                     ret['port_id'] = target_id
                 elif target_type == 'router':
-                    target = self._l3_plugin.get_router(context, target_id)
+                    target = self._l3_plugin._get_router(context, target_id)
                     ret['router_id'] = target_id
                 else:
                     # Should not reach
@@ -664,7 +664,10 @@ class QosPluginRpcDbMixin(object):
         if qos.router:
             if qos.direction == 'egress':
                 prefix = 'qg-'
-                ports = [qos.router.gw_port_id]
+                if qos.router.gw_port_id:
+                    ports = [qos.router.gw_port_id]
+                else:
+                    ports = []
             else:
                 prefix = 'qr-'
                 ports = [
@@ -752,10 +755,11 @@ class QosPluginRpcDbMixin(object):
 
     def _get_qos_for_agent(self, context, qos):
         scheme = self._get_qos_conf_scheme(context, qos)
-        if scheme is None:
+        devices = self._get_devices_for_qos(qos)
+        if not devices or scheme is None:
             return None
-        return {'devices': self._get_devices_for_qos(qos),
-                'scheme': scheme}
+        else:
+            return {'devices': devices, 'scheme': scheme}
 
     def sync_qos(self, context, host):
         try:
