@@ -38,7 +38,7 @@ def upgrade():
         'l7policies',
         sa.Column('tenant_id', sa.String(length=255), nullable=False),
         sa.Column('id', sa.String(length=36), nullable=False),
-        sa.Column('pool_id', sa.String(length=36), nullable=False),
+        sa.Column('pool_id', sa.String(length=36), nullable=True),
         sa.Column('priority', sa.Integer, nullable=False),
         sa.Column('action', sa.Enum(*actions), nullable=False),
         sa.Column('key', sa.String(length=255), nullable=True),

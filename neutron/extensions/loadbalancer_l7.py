@@ -230,7 +230,7 @@ class Loadbalancer_l7(extensions.ExtensionDescriptor):
         return resources
 
     def update_attributes_map(self, attributes):
-        super(Loadbalancer, self).update_attributes_map(
+        super(Loadbalancer_l7, self).update_attributes_map(
             attributes, extension_attrs_map=RESOURCE_ATTRIBUTE_MAP)
 
     def get_extended_resources(self, version):
