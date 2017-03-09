@@ -427,7 +427,7 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
     def delete_l7policy(self, l7policy):
         self._refresh_device(l7policy['pool_id'])
 
-    def update_l7rule(self, old_rule, rule, pool_id):
+    def update_l7rule(self, old_l7rule, l7rule, pool_id):
         self._refresh_device(pool_id)
 
     def create_l7policy_l7rule(self, l7policy):

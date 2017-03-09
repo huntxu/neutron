@@ -919,19 +919,19 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         ]
         return self._fields(res, fields)
 
-    def create_l7policy(self, context, policy):
-        p = policy['l7policy']
+    def create_l7policy(self, context, l7policy):
+        p = l7policy['l7policy']
 
         tenant_id = self._get_tenant_id_for_create(context, p)
         with context.session.begin(subtransactions=True):
             policy_db = L7policy(id=uuidutils.generate_uuid(),
                                  tenant_id=tenant_id,
                                  pool_id=p['pool_id'],
-                                 prority=p['prority'],
+                                 priority=p['priority'],
                                  action=p['action'],
                                  key=p['key'],
                                  value=p['value'],
-                                 admin_state_up=v['admin_state_up'])
+                                 admin_state_up=p['admin_state_up'])
             context.session.add(policy_db)
 
         return self._make_l7policy_dict(policy_db)
@@ -940,8 +940,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         policy = self._get_resource(context, L7policy, id)
         return self._make_l7policy_dict(policy, fields)
 
-    def update_l7policy(self, context, id, policy):
-        p = policy['l7policy']
+    def update_l7policy(self, context, id, l7policy):
+        p = l7policy['l7policy']
         with context.session.begin(subtransactions=True):
             db = self._get_resource(context, L7policy, id)
             if p:
@@ -982,8 +982,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
         return self._fields(res, fields)
 
-    def create_l7rule(self, context, rule):
-        r = rule['l7rule']
+    def create_l7rule(self, context, l7rule):
+        r = l7rule['l7rule']
 
         tenant_id = self._get_tenant_id_for_create(context, r)
         with context.session.begin(subtransactions=True):
@@ -994,7 +994,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                              compare_value=r['compare_value'],
                              key=r['key'],
                              value=r['value'],
-                             admin_state_up=v['admin_state_up'])
+                             admin_state_up=r['admin_state_up'])
             context.session.add(rule_db)
 
         return self._make_l7rule_dict(rule_db)
@@ -1003,11 +1003,11 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         rule = self._get_resource(context, L7rule, id)
         return self._make_l7rule_dict(rule, fields)
 
-    def update_l7rule(self, context, id, rule):
-        r = rule['l7rule']
+    def update_l7rule(self, context, id, l7rule):
+        r = l7rule['l7rule']
         with context.session.begin(subtransactions=True):
             db = self._get_resource(context, L7rule, id)
-            if p:
+            if r:
                 db.update(r)
 
         return self._make_l7rule_dict(db)
@@ -1025,11 +1025,11 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 raise loadbalancer_l7.L7ruleInUse(l7rule_id=id)
             context.session.delete(db)
 
-    def create_l7policy_l7rule(self, context, rule, l7policy_id):
-        add_rule = rule['rule']
+    def create_l7policy_l7rule(self, context, l7rule, l7policy_id):
+        add_rule = l7rule['l7rule']
         tenant_id = self._get_tenant_id_for_create(context, add_rule)
         with context.session.begin(subtransactions=True):
-            assoc_qry = context.session.query(L7policyRuleAssociation)
+            assoc_qry = context.session.query(L7policyL7ruleAssociation)
             assoc = assoc_qry.filter_by(policy_id=l7policy_id,
                                         rule_id=add_rule['id']).first()
             if assoc:
@@ -1041,13 +1041,9 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             if l7policy['tenant_id'] != tenant_id:
                 raise n_exc.NotAuthorized()
 
-            assoc = L7policyRuleAssociation(policy_id=l7policy_id,
-                                            rule_id=add_rule['id'])
+            assoc = L7policyL7ruleAssociation(policy_id=l7policy_id,
+                                              rule_id=add_rule['id'])
             context.session.add(assoc)
-            rules = [
-                policy_rule_assoc['rule_id']
-                for policy_rule_assoc in l7policy['policy_rule_assoc']
-            ]
 
         res = {'policy_id': l7policy_id,
                'rule_id': add_rule['id'],
@@ -1056,7 +1052,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
     def _get_l7policy_l7rule(self, context, id, policy_id):
         try:
-            assoc_qry = context.session.query(L7policyRuleAssociation)
+            assoc_qry = context.session.query(L7policyL7ruleAssociation)
             return assoc_qry.filter_by(policy_id=policy_id, rule_id=id).one()
         except exc.NoResultFound:
             raise loadbalancer_l7.L7policyRuleAssociationNotFound(
@@ -1068,7 +1064,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             context.session.delete(assoc)
 
     def get_l7policy_l7rule(self, context, id, l7policy_id, fields=None):
-        policy_rule = self._get_l7policy_l7rule(context, id, l7policy_id)
+        self._get_l7policy_l7rule(context, id, l7policy_id)
         # need to add tenant_id for admin_or_owner policy check to pass
         rule = self.get_l7rule(context, id)
         res = {'policy_id': l7policy_id,

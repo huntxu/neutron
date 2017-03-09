@@ -47,7 +47,7 @@ STATS_MAP = {
 }
 
 ACL_TYPE_MAP = {
-    'backServerId': 'be_id %(value)s',
+    'backendServerId': 'srv_id',
 }
 
 ACL_COMPARE_MAP = {
@@ -62,7 +62,7 @@ POLICY_ACTION_MAP = {
 
 ACTIVE_PENDING_STATUSES = qconstants.ACTIVE_PENDING_STATUSES
 INACTIVE = qconstants.INACTIVE
-ACL_RULE_ID_LENGTH = 10
+ACL_RULE_ID_LENGTH = 9
 ACL_RULE_NAME_LENGTH = 12
 
 
@@ -148,13 +148,18 @@ def _get_acl_name(rule):
     return ('acl_' + rule['id'])[:ACL_RULE_NAME_LENGTH]
 
 
-def _get_acl_member_id(rule):
-    return int(('0x' + rule['value'])[:ACL_RULE_ID_LENGTH])
+def _get_acl_member_id(id):
+    # Max id is 2**31 -1
+    return int(('0x' + id)[:ACL_RULE_ID_LENGTH], base=16)
+
+
+def _update_backserver_value(rule):
+    rule['value'] = _get_acl_member_id(rule['value'])
 
 
 def _build_acl(rule):
     type_value_convert_map = {
-        'backServerId': _get_acl_member_id,
+        'backendServerId': _update_backserver_value,
     }
 
     acl_name = 'acl %s' % _get_acl_name(rule)
@@ -165,7 +170,7 @@ def _build_acl(rule):
     acl_match = ACL_TYPE_MAP[rule['type']] % rule
     acl_compare = ACL_COMPARE_MAP[rule['compare_type']] % rule
 
-    return ' '.jion([acl_name, acl_match, acl_compare])
+    return ' '.join([acl_name, acl_match, acl_compare])
 
 
 def _build_policy_action(policy, rule):
@@ -179,13 +184,23 @@ def _build_policy_action(policy, rule):
     return acl
 
 
+def _sort_policy_by_priority(policies):
+    def _cmp_policies(a, b):
+        return int(a['policy']['priority']) - int(b['policy']['priority'])
+
+    policies.sort(cmp=_cmp_policies)
+    return policies
+
+
 def _build_policy_and_acl(config):
     opts = []
     need_add_server_id = False
     policies = config['l7policies']
+    policies = _sort_policy_by_priority(policies)
+
     for policy in policies:
         for rule in policy['rules']:
-            if rule['type'] == 'backServerId':
+            if rule['type'] == 'backendServerId':
                 need_add_server_id = True
 
             opts.append(_build_acl(rule))

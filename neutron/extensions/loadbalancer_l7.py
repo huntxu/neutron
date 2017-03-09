@@ -57,7 +57,7 @@ class L7ruleTypeKeyValueNotSupport(qexception.BadRequest):
 
 class L7ruleCompareTypeValueNotSupport(qexception.BadRequest):
     message = _("L7rule compare_type %(l7rule_compare_type)s with "
-                "compare value %(l7_rule_compare_value)s dose not support")
+                "compare value %(l7rule_compare_value)s dose not support")
 
 
 class L7policyRuleAssociationExists(qexception.BadRequest):
@@ -80,15 +80,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'validate': {'type:string': None},
                       'required_by_policy': True,
                       'is_visible': True},
-        'name': {'allow_post': True, 'allow_put': True,
-                 'validate': {'type:string': None},
-                 'default': '',
-                 'is_visible': True},
-        'description': {'allow_post': True, 'allow_put': True,
-                        'validate': {'type:string': None},
-                        'is_visible': True, 'default': ''},
         'pool_id': {'allow_post': True, 'allow_put': True,
-                    'validate': {'type:uuid': None},
+                    'validate': {'type:uuid_or_none': None},
+                    'default': None,
                     'is_visible': True},
         'priority': {'allow_post': True, 'allow_put': True,
                      'validate': {'type:range': [0, 255]},
@@ -108,6 +102,8 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'default': True,
                            'convert_to': attr.convert_to_boolean,
                            'is_visible': True},
+        'rules': {'allow_post': False, 'allow_put': False,
+                  'is_visible': True},
     },
     'l7rules': {
         'id': {'allow_post': False, 'allow_put': False,
@@ -246,11 +242,11 @@ class LoadbalancerL7Base(object):
     """
 
     @abc.abstractmethod
-    def create_l7policy(self, context, policy):
+    def create_l7policy(self, context, l7policy):
         pass
 
     @abc.abstractmethod
-    def update_l7policy(self, context, id, policy):
+    def update_l7policy(self, context, id, l7policy):
         pass
 
     @abc.abstractmethod
@@ -266,11 +262,11 @@ class LoadbalancerL7Base(object):
         pass
 
     @abc.abstractmethod
-    def create_l7rule(self, context, rule):
+    def create_l7rule(self, context, l7rule):
         pass
 
     @abc.abstractmethod
-    def update_l7rule(self, context, id, policy):
+    def update_l7rule(self, context, id, l7rule):
         pass
 
     @abc.abstractmethod
@@ -286,11 +282,7 @@ class LoadbalancerL7Base(object):
         pass
 
     @abc.abstractmethod
-    def delete_l7rule(self, context, id):
-        pass
-
-    @abc.abstractmethod
-    def create_l7policy_l7rule(self, context, rule, l7policy_id):
+    def create_l7policy_l7rule(self, context, l7rule, l7policy_id):
         pass
 
     @abc.abstractmethod

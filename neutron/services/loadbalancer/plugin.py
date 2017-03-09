@@ -19,6 +19,7 @@ from neutron import context
 from neutron.db.loadbalancer import loadbalancer_db as ldb
 from neutron.db import servicetype_db as st_db
 from neutron.extensions import loadbalancer
+from neutron.extensions import loadbalancer_l7
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
@@ -356,34 +357,34 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         # check by action
         if not action_check_map.get(policy['action'])(policy):
             raise loadbalancer_l7.L7policyActionKeyValueNotSupport(
-                l7policy_action=p['action'],
-                l7policy_key=p['key'],
-                l7policy_value=p['value']
+                l7policy_action=policy['action'],
+                l7policy_key=policy['key'],
+                l7policy_value=policy['value']
             )
 
-    def create_l7policy(self, context, policy):
-        p = policy['l7policy']
+    def create_l7policy(self, context, l7policy):
+        p = l7policy['l7policy']
         # check policy action and key/value
         self._check_policy_action_key_value(p)
-        p = super(LoadBalancerPlugin, self).create_l7policy(context, policy)
+        p = super(LoadBalancerPlugin, self).create_l7policy(context, l7policy)
         if p['pool_id']:
             driver = self._get_driver_for_pool(context, p['pool_id'])
             driver.create_l7policy(context, p, p['pool_id'])
         return p
 
-    def update_l7policy(self, context, id, policy):
+    def update_l7policy(self, context, id, l7policy):
         # TODO only allow update for same pool provider
-        old_policy = self.get_l7policy(context, id)
-        update_policy = super(LoadBalancerPlugin, self).update_l7policy(
-            context, policy)
-        if update_policy['pool_id'] or old_policy['pool_id']:
+        old_l7policy = self.get_l7policy(context, id)
+        update_l7policy = super(LoadBalancerPlugin, self).update_l7policy(
+            context, id, l7policy)
+        if update_l7policy['pool_id'] or old_l7policy['pool_id']:
             driver = self._get_driver_for_pool(context,
-                                               update_policy['pool_id'])
-            driver.update_l7policy(context, old_policy, update_policy)
-        return update_policy
+                                               update_l7policy['pool_id'])
+            driver.update_l7policy(context, old_l7policy, update_l7policy)
+        return update_l7policy
 
     def delete_l7policy(self, context, id):
-        policy = self.get_l7policy(id)
+        policy = self.get_l7policy(context, id)
         super(LoadBalancerPlugin, self).delete_l7policy(context, id)
         if policy['pool_id']:
             driver = self._get_driver_for_pool(context, policy['pool_id'])
@@ -429,26 +430,27 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
                 l7rule_compare_value=r['compare_value']
             )
 
-    def create_l7rule(self, context, rule):
-        r = rule['rule']
+    def create_l7rule(self, context, l7rule):
+        r = l7rule['l7rule']
         self._check_rule_type_key_value(context, r)
         self._check_rule_compare_type_and_value(r)
-        return super(LoadBalancerPlugin, self).create_l7rule(context, rule)
+        return super(LoadBalancerPlugin, self).create_l7rule(context, l7rule)
 
-    def update_l7rule(self, context, id, rule):
-        rule_res = self.get_rule(id)
-        if 'compare_value' in rule:
-            rule_res['compare_value'] = rule['compare_value']
+    def update_l7rule(self, context, id, l7rule):
+        rule_res = self.get_l7rule(context, id)
+        if 'compare_value' in l7rule['l7rule']:
+            rule_res['compare_value'] = l7rule['l7rule']['compare_value']
             self._check_rule_compare_type_and_value(rule_res)
 
-        if 'value' in rule:
-            rule_res['value'] = rule['value']
+        if 'value' in l7rule['l7rule']:
+            rule_res['value'] = l7rule['l7rule']['value']
             self._check_rule_type_key_value(context, rule_res)
-        res = super(LoadBalancerPlugin, self).update_l7rule(context, id, rule)
+        res = super(LoadBalancerPlugin, self).update_l7rule(context, id,
+                                                            l7rule)
 
         with context.session.begin(subtransactions=True):
             qry = context.session.query(
-                ldb.L7policyRuleAssociation
+                ldb.L7policyL7ruleAssociation
             ).filter_by(rule_id=id).join(ldb.L7policy)
             for assoc in qry:
                 if assoc.policy['pool_id']:
@@ -458,9 +460,9 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
                                          assoc.policy['pool_id'])
         return res
 
-    def create_l7policy_l7rule(self, context, rule, l7policy_id):
+    def create_l7policy_l7rule(self, context, l7rule, l7policy_id):
         res = super(LoadBalancerPlugin, self).create_l7policy_l7rule(
-            context, rule, l7policy_id)
+            context, l7rule, l7policy_id)
 
         policy = self.get_l7policy(context, l7policy_id)
         if policy['pool_id']:
@@ -473,5 +475,5 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
             context, id, l7policy_id)
         policy = self.get_l7policy(context, l7policy_id)
         if policy['pool_id']:
-            driver = self._get_driver_for_pool(policy['pool_id'])
+            driver = self._get_driver_for_pool(context, policy['pool_id'])
             driver.delete_l7policy_l7rule(context, policy, policy['pool_id'])

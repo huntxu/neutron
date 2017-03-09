@@ -122,7 +122,7 @@ class LoadBalancerCallbacks(n_rpc.RpcCallback):
             # policy and rules
             retval['l7policies'] = [
                 {
-                    'policy': self.plugin._make_policy_dict(policy),
+                    'policy': self.plugin._make_l7policy_dict(policy),
                     'rules': [
                         self.plugin._make_l7rule_dict(
                             policy_rule_assoc.rule
@@ -540,7 +540,7 @@ class AgentDriverBase(abstract_driver.LoadBalancerAbstractDriver):
         if ((old_policy['pool_id'] or policy['pool_id']) and
                 old_policy['pool_id'] == policy['pool_id']):
             agent = self.get_pool_agent(context, policy['pool_id'])
-            return self.agent_rpc.update_l7policy(context, policy,
+            return self.agent_rpc.update_l7policy(context, old_policy, policy,
                                                   agent['host'])
 
         # l7policy pool change, delete and create
