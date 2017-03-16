@@ -133,15 +133,12 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         if router_id in self.routers:
             del self.routers[router_id]
 
-    def get_external_device_name(self, port_id):
-        return (EXTERNAL_DEV_PREFIX + port_id)[:self.driver.DEV_NAME_LEN]
-
     def _process_metering_label_rules(self, rm, rules, label_chain,
                                       rules_chain):
         im = rm.iptables_manager
         if not rm.router['gw_port_id']:
             return
-        ext_dev = self.get_external_device_name(rm.router['gw_port_id'])
+        ext_dev = "%s+" % EXTERNAL_DEV_PREFIX
 
         for rule in rules:
             remote_ip = rule['remote_ip_prefix']
