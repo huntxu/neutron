@@ -13,6 +13,7 @@
 #    under the License.
 
 import itertools
+import netaddr
 from six import moves
 
 from neutron.agent.linux import utils
@@ -114,6 +115,19 @@ def _build_frontend(config):
     )
 
 
+def _sort_members_by_priority_or_ip_port(members):
+    def _cmp_member(a, b):
+        return (
+            (int(a['priority']) - int(b['priority'])) or
+            (int(netaddr.IPAddress(a['address'])) -
+             int(netaddr.IPAddress(b['address']))) or
+            (int(a['protocol_port']) - int(b['protocol_port']))
+        )
+
+    members.sort(cmp=_cmp_member)
+    return members
+
+
 def _build_backend(config):
     protocol = config['pool']['protocol']
     lb_method = config['pool']['lb_method']
@@ -134,6 +148,9 @@ def _build_backend(config):
     persist_opts = _get_session_persistence(config)
     opts.extend(persist_opts)
 
+    # backup members need resort
+    config['members'] = _sort_members_by_priority_or_ip_port(config['members'])
+
     # add the members
     for member in config['members']:
         if ((member['status'] in ACTIVE_PENDING_STATUSES or
@@ -141,6 +158,8 @@ def _build_backend(config):
             and member['admin_state_up']):
             server = (('server %(id)s %(address)s:%(protocol_port)s '
                        'weight %(weight)s') % member) + server_addon
+            if member['priority'] < 256:
+                server += ' backup'
             if _has_http_cookie_persistence(config):
                 server += ' cookie %d' % config['members'].index(member)
             opts.append(server)

@@ -141,6 +141,12 @@ def _validate_range(data, valid_values=None):
         return msg
 
 
+def _validate_range_or_none(data, valid_values=None):
+    if data is None:
+        return
+    return _validate_range(data, valid_values)
+
+
 def _validate_no_whitespace(data):
     """Validates that input has no whitespace."""
     if len(data.split()) > 1:
@@ -492,6 +498,11 @@ def convert_to_int(data):
         raise n_exc.InvalidInput(error_message=msg)
 
 
+def convert_to_int_if_not_none(data):
+    if data is not None:
+        return convert_to_int(data)
+
+
 def convert_kvp_str_to_list(data):
     """Convert a value of the form 'key=value' to ['key', 'value'].
 
@@ -566,6 +577,7 @@ validators = {'type:dict': _validate_dict,
               'type:nameservers': _validate_nameservers,
               'type:non_negative': _validate_non_negative,
               'type:range': _validate_range,
+              'type:range_or_none': _validate_range_or_none,
               'type:regex': _validate_regex,
               'type:regex_or_none': _validate_regex_or_none,
               'type:string': _validate_string,
