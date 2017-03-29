@@ -158,7 +158,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                                                                  'SOURCE_IP'],
                                                  'required': True},
                                         'cookie_name': {'type:string': None,
-                                                        'required': False}}},
+                                                        'required': False},
+                                        'extra_actions': {
+                                            'type:json_string': None,
+                                            'required': False}}},
                                 'is_visible': True},
         'connection_limit': {'allow_post': True, 'allow_put': True,
                              'default': -1,

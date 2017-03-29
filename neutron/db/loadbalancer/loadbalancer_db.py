@@ -49,6 +49,7 @@ class SessionPersistence(model_base.BASEV2):
                              name="sesssionpersistences_type"),
                      nullable=False)
     cookie_name = sa.Column(sa.String(1024))
+    extra_actions = sa.Column(sa.String(1024), nullable=True)
 
 
 class PoolStatistics(model_base.BASEV2):
@@ -320,6 +321,9 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
             if vip['session_persistence']['type'] == 'APP_COOKIE':
                 s_p['cookie_name'] = vip['session_persistence']['cookie_name']
+                # Make PEP8 happy
+                vip_session_persistence = vip['session_persistence']
+                s_p['extra_actions'] = vip_session_persistence['extra_actions']
 
             res['session_persistence'] = s_p
 
@@ -335,9 +339,10 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 raise ValueError(_("'cookie_name' should be specified for this"
                                    " type of session persistence."))
         else:
-            if 'cookie_name' in info:
-                raise ValueError(_("'cookie_name' is not allowed for this type"
-                                   " of session persistence"))
+            if 'cookie_name' in info or 'extra_actions' in info:
+                raise ValueError(_("'cookie_name' or 'extra_actions' is not"
+                                   "allowed for this type"
+                                   "of session persistence"))
 
     def _create_session_persistence_db(self, session_info, vip_id):
         self._check_session_persistence_info(session_info)
@@ -345,6 +350,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         sesspersist_db = SessionPersistence(
             type=session_info['type'],
             cookie_name=session_info.get('cookie_name'),
+            extra_actions=session_info.get('extra_actions'),
             vip_id=vip_id)
         return sesspersist_db
 
@@ -362,6 +368,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             # an existing value in the database.
             if 'cookie_name' not in info:
                 info['cookie_name'] = None
+            if 'extra_actions' not in info:
+                info['extra_actions'] = None
 
             if sesspersist_db:
                 sesspersist_db.update(info)
@@ -369,6 +377,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 sesspersist_db = SessionPersistence(
                     type=info['type'],
                     cookie_name=info['cookie_name'],
+                    extra_actions=info['extra_actions'],
                     vip_id=vip_id)
                 context.session.add(sesspersist_db)
                 # Update vip table
