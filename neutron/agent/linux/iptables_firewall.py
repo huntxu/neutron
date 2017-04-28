@@ -179,6 +179,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         return port['device']
 
     def _setup_metering_chains(self, port, direction, chain_name):
+        if not cfg.CONF.SECURITYGROUP.enable_es_port_metering:
+            return chain_name
         # Only support IPv4
         chains = self._metering_chain_names(port, direction)
         for m_chain_name in chains:

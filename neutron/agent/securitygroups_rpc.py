@@ -48,7 +48,11 @@ security_group_opts = [
             '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',  # RFC 1918
             '169.254.0.0/16'  # RFC 3927
         ],
-        help=_('IP addresses that should be recognized as private.'))
+        help=_('IP addresses that should be recognized as private.')),
+    cfg.BoolOpt(
+        'enable_es_port_metering',
+        default=False,
+        help=_('Whether to enable extra iptables rules for port metering.')),
 ]
 cfg.CONF.register_opts(security_group_opts, 'SECURITYGROUP')
 
