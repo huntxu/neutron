@@ -731,9 +731,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             # interfaces on the same subnet
             ip_wrapper.netns.execute(['sysctl', '-w',
                                       'net.ipv4.conf.default.arp_ignore=1'])
-            # RFC3704 Loose Reverse Path
+            # RFC3704 Strict Reverse Path
             ip_wrapper.netns.execute(['sysctl', '-w',
-                                      'net.ipv4.conf.default.rp_filter=2'])
+                                      'net.ipv4.conf.default.rp_filter=1'])
 
     def _create_router_namespace(self, ri):
         self._create_namespace(ri.ns_name)
@@ -1236,17 +1236,19 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         return fip_statuses
 
-    def _es_process_ip_rules(self, ri, fixed_addrs):
+    def _es_process_ip_rules(self, ri, fip_map):
         ns_ipr = ip_lib.IpRule(self.root_helper, namespace=ri.ns_name)
         existing_ips = ns_ipr.list_from_rules()
+        fixed_ips = fip_map.keys()
+        floating_ips = fip_map.values()
 
-        for ip in existing_ips - fixed_addrs:
-            table = netaddr.IPNetwork(ip).value
-            ns_ipr.delete_rule_from(ip, table)
+        for ip in existing_ips - set(fixed_ips + floating_ips):
+            ns_ipr.delete_rule_from(ip, None)
 
-        for ip in fixed_addrs - existing_ips:
+        for ip in set(fixed_ips) - existing_ips:
             table = netaddr.IPNetwork(ip).value
             ns_ipr.add_rule_from(ip, table)
+            ns_ipr.add_rule_from(fip_map[ip], table)
 
     def _es_add_floating_ip(self, ri, fip):
         addr_added = False
@@ -1295,8 +1297,6 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             device.route.add_gateway(ex_gateway, table=table)
             # Don't touch the main table
             device.route.delete_onlink_route(fip_subnet)
-            self._send_gratuitous_arp_packet(
-                ri.ns_name, interface_name, fip['floating_ip_address'])
 
         ri.es_fips_dict[fip['id']] = fip
 
@@ -1325,7 +1325,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
 
         self._es_process_ip_rules(
-            ri, set([fip['fixed_ip_address'] for fip in floating_ips]))
+            ri, {
+                fip['fixed_ip_address']: fip['floating_ip_address']
+                for fip in floating_ips})
 
         for fip in floating_ips:
             fip_statuses[fip['id']] = self._es_add_floating_ip(ri, fip)
