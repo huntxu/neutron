@@ -95,7 +95,7 @@ RESOURCE_ATTRIBUTE_MAP = {
         'key': {'allow_post': True, 'allow_put': False,
                 'validate': {'type:string_or_none': None},
                 'default': None, 'is_visible': True},
-        'value': {'allow_post': True, 'allow_put': False,
+        'value': {'allow_post': True, 'allow_put': True,
                   'validate': {'type:string_or_none': None},
                   'default': None, 'is_visible': True},
         'admin_state_up': {'allow_post': True, 'allow_put': True,
