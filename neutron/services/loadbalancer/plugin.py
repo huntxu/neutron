@@ -377,9 +377,10 @@ class LoadBalancerPlugin(ldb.LoadBalancerPluginDb,
         old_l7policy = self.get_l7policy(context, id)
         update_l7policy = super(LoadBalancerPlugin, self).update_l7policy(
             context, id, l7policy)
-        if update_l7policy['pool_id'] or old_l7policy['pool_id']:
-            driver = self._get_driver_for_pool(context,
-                                               update_l7policy['pool_id'])
+
+        pool_id = update_l7policy['pool_id'] or old_l7policy['pool_id']
+        if pool_id:
+            driver = self._get_driver_for_pool(context, pool_id)
             driver.update_l7policy(context, old_l7policy, update_l7policy)
         return update_l7policy
 
