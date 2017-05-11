@@ -109,15 +109,17 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
         if label['direction'] == 'ingress':
             rule_parts += ['-m mark --mark %s' % ES_METERING_MARK]
             rule_dir = '-d'
+            port_selector = '--dport'
         else:
             rule_parts += ['-o %s+' % iptables_driver.EXTERNAL_DEV_PREFIX]
             rule_dir = '-s'
+            port_selector = '--sport'
 
         if label['internal_ip'] is not None:
             rule_parts += ['%s %s' % (rule_dir, label['internal_ip'])]
 
         if label['tcp_port'] is not None:
-            rule_parts += ['-p tcp --dport %s' % label['tcp_port']]
+            rule_parts += ['-p tcp %s %s' % (port_selector, label['tcp_port'])]
 
         rule_parts += ['-j %s' % label_chain]
 
