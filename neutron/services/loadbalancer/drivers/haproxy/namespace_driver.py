@@ -121,8 +121,8 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
         # remember the pool<>port mapping
         self.pool_to_port_id[pool_id] = logical_config['vip']['port']['id']
         if port_id not in self.port_to_pool_id:
-            self.port_to_pool_id[port_id] = []
-        self.port_to_pool_id[port_id].append(pool_id)
+            self.port_to_pool_id[port_id] = set()
+        self.port_to_pool_id[port_id].add(pool_id)
 
     @n_utils.synchronized('haproxy-driver')
     def undeploy_instance(self, pool_id, cleanup_namespace=False):
@@ -138,7 +138,7 @@ class HaproxyNSDriver(agent_device_driver.AgentDeviceDriver):
             namespace = get_ns_name(port_id)
             ns = ip_lib.IPWrapper(self.root_helper, namespace)
 
-            self.port_to_pool_id[port_id].remove(pool_id)
+            self.port_to_pool_id[port_id].discard(pool_id)
             if not self.port_to_pool_id[port_id]:
                 # last pool deteled
                 self._unplug(namespace, port_id)
