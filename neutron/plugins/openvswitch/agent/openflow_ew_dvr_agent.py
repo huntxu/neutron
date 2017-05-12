@@ -373,8 +373,12 @@ class OFEWDVRAgent(object):
 
         LOG.debug("Started OpenFlow EW DVR sync_dvr_ports()")
 
-        sync_dvrs = self.plugin_rpc.get_openflow_ew_dvrs(
-            self.context, self.host)
+        try:
+            sync_dvrs = self.plugin_rpc.get_openflow_ew_dvrs(
+                self.context, self.host)
+        except Exception:
+            LOG.exception("Error syncing dvr ports")
+            return
         LOG.debug("L2 Agent OF-EW DVR: Received response for "
                   "get_openflow_ew_dvrs() from plugin: %r", sync_dvrs)
 
