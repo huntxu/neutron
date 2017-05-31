@@ -46,6 +46,20 @@ class VipExists(qexception.NeutronException):
     message = _("Another Vip already exists for pool %(pool_id)s")
 
 
+class ExtraActionsInvalid(qexception.BadRequest):
+    message = _("Extra action shoud be a JSON object")
+
+
+class ExtraActionsSetCookieForMemberInvalid(qexception.BadRequest):
+    message = _("Extra action set_cookie_for_member "
+                "shoud be a JSON object")
+
+
+class ExtraActionsMaxAgeInvalid(qexception.BadRequest):
+    message = _("Extra action set_cookie_for_member "
+                "with invalid max_age %(max_age)s")
+
+
 class PoolNotFound(qexception.NotFound):
     message = _("Pool %(pool_id)s could not be found")
 

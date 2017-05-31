@@ -29,6 +29,7 @@ from neutron.extensions import loadbalancer
 from neutron.extensions import loadbalancer_l7
 from neutron import manager
 from neutron.openstack.common import excutils
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -329,6 +330,35 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
         return self._fields(res, fields)
 
+    def _check_extra_action_info(self, action_info):
+        action_info = jsonutils.loads(action_info)
+        if not isinstance(action_info, dict):
+            raise loadbalancer.ExtraActionsInvalid()
+
+        # no operation
+        def _noop_and_warning(key, value):
+            LOG.warning(_("Not supported action key %(key)s "
+                          "and value %(value)s."),
+                        {'key': key, 'value': value})
+
+        def _check_max_age(key, value):
+            if not isinstance(value, dict):
+                raise loadbalancer.ExtraActionsSetCookieForMemberInvalid()
+            if 'max_age' in value:
+                try:
+                    int(value.get('max_age'))
+                except ValueError:
+                    raise loadbalancer.ExtraActionsMaxAgeInvalid(
+                        max_age=value.get('max_age'))
+            else:
+                raise loadbalancer.ExtraActionsSetCookieForMemberInvalid()
+
+        support_actions = {
+            'set_cookie_for_member': _check_max_age
+        }
+        for k, v in action_info.iteritems():
+            support_actions.get(k, _noop_and_warning)(k, v)
+
     def _check_session_persistence_info(self, info):
         """Performs sanity check on session persistence info.
 
@@ -338,6 +368,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             if not info.get('cookie_name'):
                 raise ValueError(_("'cookie_name' should be specified for this"
                                    " type of session persistence."))
+            if info.get('extra_actions'):
+                self._check_extra_action_info(info.get('extra_actions'))
         else:
             if 'cookie_name' in info or 'extra_actions' in info:
                 raise ValueError(_("'cookie_name' or 'extra_actions' is not"
