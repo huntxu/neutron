@@ -119,10 +119,13 @@ class FWaaSL3AgentRpcCallback(api.FWaaSAgentRpcCallbackMixin):
         LOG.debug(_("%(func_name)s from agent for fw: %(fwid)s"),
                   {'func_name': func_name, 'fwid': fw['id']})
         try:
-            routers = self.plugin_rpc.get_routers(context)
-            router_info_list = self._get_router_info_list_for_tenant(
-                routers,
-                fw['tenant_id'])
+            router_ids = self.router_info.keys()
+            router_info_list = []
+            if router_ids:
+                routers = self.plugin_rpc.get_routers(context, router_ids)
+                router_info_list = self._get_router_info_list_for_tenant(
+                    routers,
+                    fw['tenant_id'])
             if not router_info_list:
                 LOG.debug(_('No Routers on tenant: %s'), fw['tenant_id'])
                 # fw was created before any routers were added, and if a
