@@ -423,49 +423,54 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             sess_qry = context.session.query(SessionPersistence)
             sess_qry.filter_by(vip_id=vip_id).delete()
 
-    def _vip_port_has_exist(self, context, vip_db, ip_addr):
-        port_filter = {'fixed_ips': {'ip_address': [ip_addr]}}
+    def _get_vip_port(self, context, vip_db, fixed_ip):
+        port_filter = {'fixed_ips': {'ip_address': [fixed_ip['ip_address']],
+                                     'subnet_id': [fixed_ip['subnet_id']]}}
 
         ports = self._core_plugin.get_ports(context, filters=port_filter)
         if ports:
-            # verify port id has exist in VIP
-            vips = self.get_vips(context,
-                                 filters={'port_id': [ports[0]['id']]})
-            if vips:
-                # verify vip listen on different L4 port
-                for vip in vips:
-                    if vip_db.protocol_port == vip['protocol_port']:
-                        raise loadbalancer.ProtocolPortInUse(
-                            proto_port=vip['protocol_port'], vip=vip['id'])
-                return ports[0]
+            port = ports[0]
+            port_id = port['id']
+            device_owner = port['device_owner']
+
+            # port is free or port is owned by neutron:LOADBALANCER
+            valid_device_owners = ['', 'neutron:' + constants.LOADBALANCER]
+            if device_owner not in valid_device_owners:
+                raise loadbalancer.PortNotOwnedByLB(port_id=port_id)
+
+            # verify vip listen on different L4 port
+            vips = self.get_vips(context, filters={'port_id': [port_id]})
+            for vip in vips:
+                if vip_db.protocol_port == vip['protocol_port']:
+                    raise loadbalancer.ProtocolPortInUse(
+                        proto_port=vip['protocol_port'], vip=vip['id'])
+            return port
         return None
 
     def _create_port_for_vip(self, context, vip_db, subnet_id, ip_address):
         # resolve subnet and create port
         subnet = self._core_plugin.get_subnet(context, subnet_id)
         fixed_ip = {'subnet_id': subnet['id']}
-        need_create_port = True
+        port = None
 
         if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
             fixed_ip['ip_address'] = ip_address
-            # check if vip port has exist
-            port = self._vip_port_has_exist(context, vip_db, ip_address)
-            if port:
-                need_create_port = False
+            # Use an existing port if no confliction
+            port = self._get_vip_port(context, vip_db, fixed_ip)
 
-        port_data = {
-            'tenant_id': vip_db.tenant_id,
-            'name': 'vip-' + vip_db.id,
-            'network_id': subnet['network_id'],
-            'mac_address': attributes.ATTR_NOT_SPECIFIED,
-            'admin_state_up': False,
-            'device_id': '',
-            'device_owner': '',
-            'fixed_ips': [fixed_ip]
-        }
-
-        if need_create_port:
+        if not port:
+            port_data = {
+                'tenant_id': vip_db.tenant_id,
+                'name': 'vip-' + vip_db.id,
+                'network_id': subnet['network_id'],
+                'mac_address': attributes.ATTR_NOT_SPECIFIED,
+                'admin_state_up': False,
+                'device_id': '',
+                'device_owner': '',
+                'fixed_ips': [fixed_ip]
+            }
             port = self._core_plugin.create_port(context, {'port': port_data})
+
         vip_db.port_id = port['id']
         # explicitly sync session with db
         context.session.flush()
