@@ -188,6 +188,7 @@ class MeteringDbMixin(metering.MeteringPluginBase,
                 raise metering.MeteringLabelRuleNotFound(rule_id=rule_id)
 
             context.session.delete(rule)
+        return rule
 
     def _get_metering_rules_dict(self, metering_label):
         rules = []

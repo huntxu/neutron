@@ -42,7 +42,7 @@ class MeteringPlugin(metering_db.MeteringDbMixin,
             context, metering_label)
 
         data = metering_db.MeteringDbMixin.get_sync_data_metering(
-            self, context)
+            self, context, label['id'])
         self.meter_rpc.add_metering_label(context, data)
 
         return label
@@ -62,7 +62,7 @@ class MeteringPlugin(metering_db.MeteringDbMixin,
             context, metering_label_rule)
 
         data = metering_db.MeteringDbMixin.get_sync_data_metering(
-            self, context)
+            self, context, rule['metering_label_id'])
         self.meter_rpc.update_metering_label_rules(context, data)
 
         return rule
@@ -71,18 +71,17 @@ class MeteringPlugin(metering_db.MeteringDbMixin,
         rule = super(MeteringPlugin, self).delete_metering_label_rule(
             context, rule_id)
 
+        label_id = rule['metering_label_id']
         data = metering_db.MeteringDbMixin.get_sync_data_metering(
-            self, context)
+            self, context, label_id)
         self.meter_rpc.update_metering_label_rules(context, data)
-
-        return rule
 
     def create_es_metering_label(self, context, es_metering_label):
         label = super(MeteringPlugin, self).create_es_metering_label(
             context, es_metering_label)
 
         data = es_metering_db.EsMeteringDbMixin.get_sync_data_metering(
-            self, context)
+            self, context, label_id=label['id'])
         self.meter_rpc.add_es_metering_label(context, data)
 
         return label
