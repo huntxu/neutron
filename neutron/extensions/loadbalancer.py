@@ -113,6 +113,10 @@ class ProtocolPortInUse(qexception.BadRequest):
     message = _("VIP %(vip)s has bound to the protocol port %(proto_port)s")
 
 
+class PortNotOwnedByLB(qexception.BadRequest):
+    message = _("Port %(port_id)s not owned by LOADBALANCER.")
+
+
 class PoolNotBoundToAgent(qexception.BadRequest):
     message = _("Pool %(pool)s has not bound to agent %(agent)s")
 
