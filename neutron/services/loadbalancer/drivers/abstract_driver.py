@@ -132,3 +132,27 @@ class LoadBalancerAbstractDriver(object):
     @abc.abstractmethod
     def delete_pool_health_monitor(self, context, health_monitor, pool_id):
         pass
+
+    @abc.abstractmethod
+    def create_l7policy(self, context, policy, pool_id):
+        pass
+
+    @abc.abstractmethod
+    def update_l7policy(self, context, old_policy, new_policy):
+        pass
+
+    @abc.abstractmethod
+    def delete_l7policy(self, context, policy, pool_id):
+        pass
+
+    @abc.abstractmethod
+    def update_l7rule(self, context, old_rule, new_rule, pool_id):
+        pass
+
+    @abc.abstractmethod
+    def create_l7policy_l7rule(self, context, policy, pool_id):
+        pass
+
+    @abc.abstractmethod
+    def delete_l7policy_l7rule(self, context, policy, pool_id):
+        pass

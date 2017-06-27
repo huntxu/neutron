@@ -19,6 +19,7 @@ import re
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import uuidutils
 
 
@@ -100,6 +101,19 @@ def _validate_string(data, max_len=None):
         msg = (_("'%(data)s' exceeds maximum length of %(max_len)s") %
                {'data': data, 'max_len': max_len})
         LOG.debug(msg)
+        return msg
+
+
+def _validate_json_string(data, max_len=None):
+    if data is not None:
+        msg = _validate_string(data, max_len=max_len)
+        if not msg:
+            # valid json
+            try:
+                jsonutils.loads(data)
+            except (ValueError, TypeError):
+                msg = (_("'%(data)s' is not an json string format") %
+                       {'data': data})
         return msg
 
 
@@ -582,6 +596,7 @@ validators = {'type:dict': _validate_dict,
               'type:regex_or_none': _validate_regex_or_none,
               'type:string': _validate_string,
               'type:string_or_none': _validate_string_or_none,
+              'type:json_string': _validate_json_string,
               'type:not_empty_string': _validate_not_empty_string,
               'type:not_empty_string_or_none':
               _validate_not_empty_string_or_none,

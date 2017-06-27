@@ -89,6 +89,15 @@ class IptablesDriverTestCase(base.BaseTestCase):
                                              binary_name=mock.ANY,
                                              use_ipv6=mock.ANY)
 
+    def test_create_stateless_iptables_manager(self):
+        routers = TEST_ROUTERS[:1]
+        self.metering.add_metering_label(None, routers)
+        self.iptables_cls.assert_called_with(
+            binary_name=mock.ANY,
+            namespace=mock.ANY,
+            state_less=True,
+            use_ipv6=mock.ANY)
+
     def test_add_metering_label(self):
         routers = TEST_ROUTERS[:1]
 

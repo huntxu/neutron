@@ -26,8 +26,10 @@ from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.db import servicetype_db as st_db
 from neutron.extensions import loadbalancer
+from neutron.extensions import loadbalancer_l7
 from neutron import manager
 from neutron.openstack.common import excutils
+from neutron.openstack.common import jsonutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.common import constants
@@ -48,6 +50,7 @@ class SessionPersistence(model_base.BASEV2):
                              name="sesssionpersistences_type"),
                      nullable=False)
     cookie_name = sa.Column(sa.String(1024))
+    extra_actions = sa.Column(sa.String(1024), nullable=True)
 
 
 class PoolStatistics(model_base.BASEV2):
@@ -175,8 +178,62 @@ class PoolMonitorAssociation(model_base.BASEV2,
                            primary_key=True)
 
 
+class L7policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """L7 policy."""
+
+    __tablename__ = "l7policies"
+    pool_id = sa.Column(sa.String(36),
+                        sa.ForeignKey("pools.id", ondelete="SET NULL"),
+                        nullable=True)
+    priority = sa.Column(sa.Integer, nullable=False)
+    action = sa.Column(sa.Enum(*constants.LOADBALANCER_L7POLICY_ACTIONS,
+                               name="l7policy_action"),
+                       nullable=False)
+    key = sa.Column(sa.String(255), nullable=True)
+    value = sa.Column(sa.String(255), nullable=True)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    pool = orm.relationship(Pool,
+                            backref=orm.backref('policies', uselist=True))
+    policy_rule_assoc = orm.relationship(
+        "L7policyL7ruleAssociation", backref="policy",
+        cascade="all", lazy="joined", uselist=True
+    )
+
+
+class L7rule(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
+    """L7 rule"""
+
+    type = sa.Column(sa.Enum(*constants.LOADBALANCER_L7RULE_TYPES,
+                             name="l7rule_type"),
+                     nullable=False)
+    compare_type = sa.Column(
+        sa.Enum(*constants.LOADBALANCER_L7RULE_COMPARE_TYPES,
+                name="l7rule_compare_type"),
+        nullable=False)
+    compare_value = sa.Column(sa.String(255), nullable=True)
+    key = sa.Column(sa.String(255), nullable=True)
+    value = sa.Column(sa.String(255), nullable=True)
+    admin_state_up = sa.Column(sa.Boolean(), nullable=False)
+    rule_policy_assoc = orm.relationship(
+        "L7policyL7ruleAssociation", backref="rule",
+        cascade="all", lazy="joined", uselist=True
+    )
+
+
+class L7policyL7ruleAssociation(model_base.BASEV2):
+    """L7policy and rule association table"""
+
+    policy_id = sa.Column(sa.String(36),
+                          sa.ForeignKey("l7policies.id"),
+                          primary_key=True)
+    rule_id = sa.Column(sa.String(36),
+                        sa.ForeignKey("l7rules.id"),
+                        primary_key=True)
+
+
 class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
-                           base_db.CommonDbMixin):
+                           base_db.CommonDbMixin,
+                           loadbalancer_l7.LoadbalancerL7Base):
     """Wraps loadbalancer with SQLAlchemy models.
 
     A class that wraps the implementation of the Neutron loadbalancer
@@ -221,6 +278,10 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                     raise loadbalancer.MemberNotFound(member_id=id)
                 elif issubclass(model, HealthMonitor):
                     raise loadbalancer.HealthMonitorNotFound(monitor_id=id)
+                elif issubclass(model, L7policy):
+                    raise loadbalancer_l7.L7policyNotFound(l7policy_id=id)
+                elif issubclass(model, L7rule):
+                    raise loadbalancer_l7.L7ruleNotFound(l7rule_id=id)
                 ctx.reraise = True
         return r
 
@@ -261,10 +322,42 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
 
             if vip['session_persistence']['type'] == 'APP_COOKIE':
                 s_p['cookie_name'] = vip['session_persistence']['cookie_name']
+                # Make PEP8 happy
+                vip_session_persistence = vip['session_persistence']
+                s_p['extra_actions'] = vip_session_persistence['extra_actions']
 
             res['session_persistence'] = s_p
 
         return self._fields(res, fields)
+
+    def _check_extra_action_info(self, action_info):
+        action_info = jsonutils.loads(action_info)
+        if not isinstance(action_info, dict):
+            raise loadbalancer.ExtraActionsInvalid()
+
+        # no operation
+        def _noop_and_warning(key, value):
+            LOG.warning(_("Not supported action key %(key)s "
+                          "and value %(value)s."),
+                        {'key': key, 'value': value})
+
+        def _check_max_age(key, value):
+            if not isinstance(value, dict):
+                raise loadbalancer.ExtraActionsSetCookieForMemberInvalid()
+            if 'max_age' in value:
+                try:
+                    int(value.get('max_age'))
+                except ValueError:
+                    raise loadbalancer.ExtraActionsMaxAgeInvalid(
+                        max_age=value.get('max_age'))
+            else:
+                raise loadbalancer.ExtraActionsSetCookieForMemberInvalid()
+
+        support_actions = {
+            'set_cookie_for_member': _check_max_age
+        }
+        for k, v in action_info.iteritems():
+            support_actions.get(k, _noop_and_warning)(k, v)
 
     def _check_session_persistence_info(self, info):
         """Performs sanity check on session persistence info.
@@ -275,10 +368,13 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             if not info.get('cookie_name'):
                 raise ValueError(_("'cookie_name' should be specified for this"
                                    " type of session persistence."))
+            if info.get('extra_actions'):
+                self._check_extra_action_info(info.get('extra_actions'))
         else:
-            if 'cookie_name' in info:
-                raise ValueError(_("'cookie_name' is not allowed for this type"
-                                   " of session persistence"))
+            if 'cookie_name' in info or 'extra_actions' in info:
+                raise ValueError(_("'cookie_name' or 'extra_actions' is not"
+                                   "allowed for this type"
+                                   "of session persistence"))
 
     def _create_session_persistence_db(self, session_info, vip_id):
         self._check_session_persistence_info(session_info)
@@ -286,6 +382,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         sesspersist_db = SessionPersistence(
             type=session_info['type'],
             cookie_name=session_info.get('cookie_name'),
+            extra_actions=session_info.get('extra_actions'),
             vip_id=vip_id)
         return sesspersist_db
 
@@ -303,6 +400,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             # an existing value in the database.
             if 'cookie_name' not in info:
                 info['cookie_name'] = None
+            if 'extra_actions' not in info:
+                info['extra_actions'] = None
 
             if sesspersist_db:
                 sesspersist_db.update(info)
@@ -310,6 +409,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                 sesspersist_db = SessionPersistence(
                     type=info['type'],
                     cookie_name=info['cookie_name'],
+                    extra_actions=info['extra_actions'],
                     vip_id=vip_id)
                 context.session.add(sesspersist_db)
                 # Update vip table
@@ -840,3 +940,175 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         return self._get_collection(context, HealthMonitor,
                                     self._make_health_monitor_dict,
                                     filters=filters, fields=fields)
+
+    def _make_l7policy_dict(self, policy_db, fields=None):
+        res = {'id': policy_db['id'],
+               'tenant_id': policy_db['tenant_id'],
+               'pool_id': policy_db['pool_id'],
+               'priority': policy_db['priority'],
+               'action': policy_db['action'],
+               'key': policy_db['key'],
+               'value': policy_db['value'],
+               'admin_state_up': policy_db['admin_state_up'],
+               'rules': []
+               }
+
+        # Get the associated rules
+        res['rules'] = [
+            policy_rule_assoc['rule_id']
+            for policy_rule_assoc in policy_db['policy_rule_assoc']
+        ]
+        return self._fields(res, fields)
+
+    def create_l7policy(self, context, l7policy):
+        p = l7policy['l7policy']
+
+        tenant_id = self._get_tenant_id_for_create(context, p)
+        with context.session.begin(subtransactions=True):
+            policy_db = L7policy(id=uuidutils.generate_uuid(),
+                                 tenant_id=tenant_id,
+                                 pool_id=p['pool_id'],
+                                 priority=p['priority'],
+                                 action=p['action'],
+                                 key=p['key'],
+                                 value=p['value'],
+                                 admin_state_up=p['admin_state_up'])
+            context.session.add(policy_db)
+
+        return self._make_l7policy_dict(policy_db)
+
+    def get_l7policy(self, context, id, fields=None):
+        policy = self._get_resource(context, L7policy, id)
+        return self._make_l7policy_dict(policy, fields)
+
+    def update_l7policy(self, context, id, l7policy):
+        p = l7policy['l7policy']
+        with context.session.begin(subtransactions=True):
+            db = self._get_resource(context, L7policy, id)
+            if p:
+                db.update(p)
+
+        return self._make_l7policy_dict(db)
+
+    def get_l7policies(self, context, filters=None, fields=None):
+        collection = self._model_query(context, L7policy)
+        collection = self._apply_filters_to_query(collection, L7policy,
+                                                  filters)
+        return [self._make_l7policy_dict(c, fields)
+                for c in collection]
+
+    def delete_l7policy(self, context, id):
+        with context.session.begin(subtransactions=True):
+            db = self._get_resource(context, L7policy, id)
+            if db.policy_rule_assoc:
+                raise loadbalancer_l7.L7policyInUse(
+                    l7policy_id=id,
+                    l7rules=[
+                        policy_rule_assoc['rule_id']
+                        for policy_rule_assoc in db.policy_rule_assoc
+                    ]
+                )
+            context.session.delete(db)
+
+    def _make_l7rule_dict(self, rule_db, fields=None):
+        res = {'id': rule_db['id'],
+               'tenant_id': rule_db['tenant_id'],
+               'type': rule_db['type'],
+               'compare_type': rule_db['compare_type'],
+               'compare_value': rule_db['compare_value'],
+               'key': rule_db['key'],
+               'value': rule_db['value'],
+               'admin_state_up': rule_db['admin_state_up']
+               }
+
+        return self._fields(res, fields)
+
+    def create_l7rule(self, context, l7rule):
+        r = l7rule['l7rule']
+
+        tenant_id = self._get_tenant_id_for_create(context, r)
+        with context.session.begin(subtransactions=True):
+            rule_db = L7rule(id=uuidutils.generate_uuid(),
+                             tenant_id=tenant_id,
+                             type=r['type'],
+                             compare_type=r['compare_type'],
+                             compare_value=r['compare_value'],
+                             key=r['key'],
+                             value=r['value'],
+                             admin_state_up=r['admin_state_up'])
+            context.session.add(rule_db)
+
+        return self._make_l7rule_dict(rule_db)
+
+    def get_l7rule(self, context, id, fields=None):
+        rule = self._get_resource(context, L7rule, id)
+        return self._make_l7rule_dict(rule, fields)
+
+    def update_l7rule(self, context, id, l7rule):
+        r = l7rule['l7rule']
+        with context.session.begin(subtransactions=True):
+            db = self._get_resource(context, L7rule, id)
+            if r:
+                db.update(r)
+
+        return self._make_l7rule_dict(db)
+
+    def get_l7rules(self, context, filters=None, fields=None):
+        collection = self._model_query(context, L7rule)
+        collection = self._apply_filters_to_query(collection, L7rule, filters)
+        return [self._make_l7rule_dict(c, fields)
+                for c in collection]
+
+    def delete_l7rule(self, context, id):
+        with context.session.begin(subtransactions=True):
+            db = self._get_resource(context, L7rule, id)
+            if db.rule_policy_assoc:
+                raise loadbalancer_l7.L7ruleInUse(l7rule_id=id)
+            context.session.delete(db)
+
+    def create_l7policy_l7rule(self, context, l7rule, l7policy_id):
+        add_rule = l7rule['l7rule']
+        tenant_id = self._get_tenant_id_for_create(context, add_rule)
+        with context.session.begin(subtransactions=True):
+            assoc_qry = context.session.query(L7policyL7ruleAssociation)
+            assoc = assoc_qry.filter_by(policy_id=l7policy_id,
+                                        rule_id=add_rule['id']).first()
+            if assoc:
+                raise loadbalancer_l7.L7policyRuleAssociationExists(
+                    policy_id=l7policy_id, rule_id=add_rule['id'])
+
+            l7policy = self._get_resource(context, L7policy, l7policy_id)
+            # validate that the policy has same tenant
+            if l7policy['tenant_id'] != tenant_id:
+                raise n_exc.NotAuthorized()
+
+            assoc = L7policyL7ruleAssociation(policy_id=l7policy_id,
+                                              rule_id=add_rule['id'])
+            context.session.add(assoc)
+
+        res = {'policy_id': l7policy_id,
+               'rule_id': add_rule['id'],
+               'tenant_id': tenant_id}
+        return res
+
+    def _get_l7policy_l7rule(self, context, id, policy_id):
+        try:
+            assoc_qry = context.session.query(L7policyL7ruleAssociation)
+            return assoc_qry.filter_by(policy_id=policy_id, rule_id=id).one()
+        except exc.NoResultFound:
+            raise loadbalancer_l7.L7policyRuleAssociationNotFound(
+                rule_id=id, policy_id=policy_id)
+
+    def delete_l7policy_l7rule(self, context, id, l7policy_id):
+        with context.session.begin(subtransactions=True):
+            assoc = self._get_l7policy_l7rule(context, id, l7policy_id)
+            context.session.delete(assoc)
+
+    def get_l7policy_l7rule(self, context, id, l7policy_id, fields=None):
+        self._get_l7policy_l7rule(context, id, l7policy_id)
+        # need to add tenant_id for admin_or_owner policy check to pass
+        rule = self.get_l7rule(context, id)
+        res = {'policy_id': l7policy_id,
+               'rule_id': id,
+               'tenant_id': rule['tenant_id']}
+        return self._fields(res, fields)

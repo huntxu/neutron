@@ -36,6 +36,7 @@ DIRECTION_IP_PREFIX = {'ingress': 'source_ip_prefix',
                        'egress': 'dest_ip_prefix'}
 IPSET_DIRECTION = {INGRESS_DIRECTION: 'src',
                    EGRESS_DIRECTION: 'dst'}
+PRIVATE_IPSET_NAME = 'ES-private-nets'
 LINUX_DEV_LEN = 14
 IPSET_CHAIN_LEN = 20
 IPSET_CHANGE_BULK_THRESHOLD = 10
@@ -68,6 +69,13 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         self.pre_sg_members = None
         self.ipset_chains = {}
         self.enable_ipset = cfg.CONF.SECURITYGROUP.enable_ipset
+        self.private_nets = cfg.CONF.SECURITYGROUP.private_nets
+        if self.enable_ipset:
+            self.ipset.create_ipset_chain(
+                PRIVATE_IPSET_NAME, constants.IPv4, typename='hash:net')
+            for private_net in self.private_nets:
+                self.ipset.add_member_to_ipset_chain(
+                    PRIVATE_IPSET_NAME, private_net)
 
     @property
     def ports(self):
@@ -134,6 +142,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
             self._remove_chain(port, INGRESS_DIRECTION)
             self._remove_chain(port, EGRESS_DIRECTION)
             self._remove_chain(port, SPOOF_FILTER)
+            self._remove_metering_chains(port, INGRESS_DIRECTION)
+            self._remove_metering_chains(port, EGRESS_DIRECTION)
         self._remove_chain_by_name_v4v6(SG_CHAIN)
 
     def _setup_chain(self, port, DIRECTION):
@@ -168,9 +178,52 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
     def _get_device_name(self, port):
         return port['device']
 
+    def _setup_metering_chains(self, port, direction, chain_name):
+        if not cfg.CONF.SECURITYGROUP.enable_es_port_metering:
+            return chain_name
+        # Only support IPv4
+        chains = self._metering_chain_names(port, direction)
+        for m_chain_name in chains:
+            self.iptables.ipv4['filter'].add_chain(m_chain_name)
+
+        metering_chain, counting_in_chain, counting_chain = chains
+        # Jump to the original security group chain
+        jump_rule = '-j $%s' % chain_name
+        self.iptables.ipv4['filter'].add_rule(metering_chain, jump_rule)
+
+        # Jump to the counting chains
+        counting_rules = []
+        tmp_direction = IPSET_DIRECTION[direction]
+        if self.enable_ipset:
+            counting_rules += [
+                '-m set --match-set %s %s -j $%s' % (
+                    PRIVATE_IPSET_NAME, tmp_direction, counting_in_chain
+                )
+            ]
+        else:
+            counting_rules += [
+                '--%s %s -j $%s' % (
+                    tmp_direction, private_net, counting_in_chain
+                )
+                for private_net in self.private_nets
+            ]
+        counting_rules += ['-j $%s' % counting_chain]
+        for rule in counting_rules:
+            self.iptables.ipv4['filter'].add_rule(metering_chain, rule)
+        # Count the counting chain
+        self.iptables.ipv4['filter'].add_rule(counting_in_chain, '')
+        self.iptables.ipv4['filter'].add_rule(counting_chain, '')
+        return metering_chain
+
+    def _remove_metering_chains(self, port, direction):
+        for m_chain_name in self._metering_chain_names(port, direction):
+            self.iptables.ipv4['filter'].ensure_remove_chain(m_chain_name)
+
     def _add_chain(self, port, direction):
         chain_name = self._port_chain_name(port, direction)
         self._add_chain_by_name_v4v6(chain_name)
+        metering_chain_name = self._setup_metering_chains(
+            port, direction, chain_name)
 
         # Note(nati) jump to the security group chain (SG_CHAIN)
         # This is needed because the packet may much two rule in port
@@ -186,14 +239,15 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         self._add_rule_to_chain_v4v6('FORWARD', jump_rule, jump_rule)
 
         # jump to the chain based on the device
-        jump_rule = ['-m physdev --%s %s --physdev-is-bridged '
-                     '-j $%s' % (self.IPTABLES_DIRECTION[direction],
-                                 device,
-                                 chain_name)]
-        self._add_rule_to_chain_v4v6(SG_CHAIN, jump_rule, jump_rule)
+        jump_rules = [
+            ['-m physdev --%s %s --physdev-is-bridged -j $%s' % (
+                self.IPTABLES_DIRECTION[direction], device, j_chain_name)
+            ]
+            for j_chain_name in (metering_chain_name, chain_name)]
+        self._add_rule_to_chain_v4v6(SG_CHAIN, *jump_rules)
 
         if direction == EGRESS_DIRECTION:
-            self._add_rule_to_chain_v4v6('INPUT', jump_rule, jump_rule)
+            self._add_rule_to_chain_v4v6('INPUT', *jump_rules)
 
     def _split_sgr_by_ethertype(self, security_group_rules):
         ipv4_sg_rules = []
@@ -509,6 +563,13 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         return iptables_manager.get_chain_name(
             '%s%s' % (CHAIN_NAME_PREFIX[direction], port['device'][3:]))
 
+    def _metering_chain_names(self, port, direction):
+        return [
+            iptables_manager.get_chain_name(
+                '%s%s%s' % (
+                    prefix, CHAIN_NAME_PREFIX[direction], port['device'][3:])
+            ) for prefix in ('m', 'c', 'C')]
+
     def filter_defer_apply_on(self):
         if not self._defer_apply:
             self.iptables.defer_apply_on()
@@ -565,6 +626,13 @@ class OVSHybridIptablesFirewallDriver(IptablesFirewallDriver):
     def _port_chain_name(self, port, direction):
         return iptables_manager.get_chain_name(
             '%s%s' % (CHAIN_NAME_PREFIX[direction], port['device']))
+
+    def _metering_chain_names(self, port, direction):
+        return [
+            iptables_manager.get_chain_name(
+                '%s%s%s' % (
+                    prefix, CHAIN_NAME_PREFIX[direction], port['device'])
+            ) for prefix in ('m', 'c', 'C')]
 
     def _get_device_name(self, port):
         return (self.OVS_HYBRID_TAP_PREFIX + port['device'])[:LINUX_DEV_LEN]

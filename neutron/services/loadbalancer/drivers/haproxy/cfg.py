@@ -17,6 +17,7 @@ import netaddr
 from six import moves
 
 from neutron.agent.linux import utils
+from neutron.openstack.common import jsonutils
 from neutron.plugins.common import constants as qconstants
 from neutron.services.loadbalancer import constants
 
@@ -46,8 +47,24 @@ STATS_MAP = {
     constants.STATS_RESPONSE_ERRORS: 'eresp'
 }
 
+ACL_TYPE_MAP = {
+    'backendServerId': 'srv_id',
+}
+
+ACL_COMPARE_MAP = {
+    'integerEq': 'eq %(compare_value)s',
+}
+
+POLICY_ACTION_MAP = {
+    'block': 'block',
+    'redirect': 'redirect location %(value)s',
+    'addHeader': 'rspadd %(value)s',
+}
+
 ACTIVE_PENDING_STATUSES = qconstants.ACTIVE_PENDING_STATUSES
 INACTIVE = qconstants.INACTIVE
+ACL_RULE_ID_LENGTH = 9
+ACL_RULE_NAME_LENGTH = 12
 
 
 def save_config(conf_path, logical_config, socket_path=None,
@@ -128,6 +145,99 @@ def _sort_members_by_priority_or_ip_port(members):
     return members
 
 
+def _get_acl_name(rule):
+    return ('acl_' + rule['id'])[:ACL_RULE_NAME_LENGTH]
+
+
+def _get_acl_member_id(id):
+    # Max id is 2**31 -1
+    return int(('0x' + id)[:ACL_RULE_ID_LENGTH], base=16)
+
+
+def _update_backserver_value(rule):
+    rule['value'] = _get_acl_member_id(rule['value'])
+
+
+def _build_acl(rule):
+    type_value_convert_map = {
+        'backendServerId': _update_backserver_value,
+    }
+
+    acl_name = 'acl %s' % _get_acl_name(rule)
+
+    rule_updater = type_value_convert_map.get(rule['type'], lambda rule: rule)
+    rule_updater(rule)
+
+    acl_match = ACL_TYPE_MAP[rule['type']] % rule
+    acl_compare = ACL_COMPARE_MAP[rule['compare_type']] % rule
+
+    return ' '.join([acl_name, acl_match, acl_compare])
+
+
+def _build_policy_action(policy, rule):
+    kws = {
+        'value': policy['value'].replace(' ', '\ ') if policy['value'] else ''
+    }
+    acl = POLICY_ACTION_MAP[policy['action']] % kws
+
+    # add condition
+    acl += ' if %s' % _get_acl_name(rule)
+    return acl
+
+
+def _sort_policy_by_priority(policies):
+    def _cmp_policies(a, b):
+        return int(a['policy']['priority']) - int(b['policy']['priority'])
+
+    policies.sort(cmp=_cmp_policies)
+    return policies
+
+
+def _build_policy_and_acl(config):
+    opts = []
+    need_add_server_id = False
+    policies = config['l7policies']
+    policies = _sort_policy_by_priority(policies)
+
+    for policy in policies:
+        for rule in policy['rules']:
+            if rule['type'] == 'backendServerId':
+                need_add_server_id = True
+
+            opts.append(_build_acl(rule))
+            opts.append(_build_policy_action(policy['policy'], rule))
+    return need_add_server_id, opts
+
+
+def _build_extra_action_for_member(extra_action, member):
+    opts = []
+
+    # extra_action format: {'set_cookie_for_member': {'max_age': 15}}
+    member_cookie_params = extra_action.get('set_cookie_for_member')
+    if member_cookie_params and 'max_age' in member_cookie_params:
+        # build acl and policy
+        # set cookie for member acl and policy template
+        rule = {
+            'id': member['id'],
+            'value': member['id'],
+            'type': 'backendServerId',
+            'compare_type': 'integerEq',
+            'compare_value': _get_acl_member_id(member['id']),
+        }
+        policy = {
+            'action': 'addHeader',
+            'value': (
+                'Set-Cookie: %(cookie_name)s=%(id)s; Max-Age=%(max_age)s' %
+                {'cookie_name': extra_action['cookie_name'],
+                 'id': member['id'],
+                 'max_age': member_cookie_params['max_age']}),
+        }
+        opts.append(_build_acl(rule))
+        opts.append(_build_policy_action(policy, rule))
+
+    return opts
+
+
 def _build_backend(config):
     protocol = config['pool']['protocol']
     lb_method = config['pool']['lb_method']
@@ -136,6 +246,7 @@ def _build_backend(config):
         'mode %s' % PROTOCOL_MAP[protocol],
         'balance %s' % BALANCE_MAP.get(lb_method, 'roundrobin')
     ]
+    extra_opts = []
 
     if protocol == constants.PROTOCOL_HTTP:
         opts.append('option forwardfor')
@@ -145,13 +256,17 @@ def _build_backend(config):
     opts.extend(health_opts)
 
     # add session persistence (if available)
-    persist_opts = _get_session_persistence(config)
+    extra_action, persist_opts = _get_session_persistence(config)
     opts.extend(persist_opts)
 
     # backup members need resort
     config['members'] = _sort_members_by_priority_or_ip_port(config['members'])
+    # policy and acls
+    need_server_id, policy_opts = _build_policy_and_acl(config)
+    opts.extend(policy_opts)
 
     # add the members
+    member_opts = []
     for member in config['members']:
         if ((member['status'] in ACTIVE_PENDING_STATUSES or
              member['status'] == INACTIVE)
@@ -160,9 +275,24 @@ def _build_backend(config):
                        'weight %(weight)s') % member) + server_addon
             if member['priority'] < 256:
                 server += ' backup'
+
+            if extra_action:
+                extra_opts.extend(
+                    _build_extra_action_for_member(extra_action, member)
+                )
+                need_server_id = True
+
+            if need_server_id:
+                server += ' id %d' % _get_acl_member_id(member['id'])
+
             if _has_http_cookie_persistence(config):
                 server += ' cookie %d' % config['members'].index(member)
-            opts.append(server)
+            member_opts.append(server)
+
+    # add extra action opts
+    opts.extend(extra_opts)
+    # add member opts
+    opts.extend(member_opts)
 
     return itertools.chain(
         ['backend %s' % config['pool']['id']],
@@ -208,8 +338,10 @@ def _get_server_health_option(config):
 
 def _get_session_persistence(config):
     persistence = config['vip'].get('session_persistence')
+    extra_action = {}
+
     if not persistence:
-        return []
+        return extra_action, []
 
     opts = []
     if persistence['type'] == constants.SESSION_PERSISTENCE_SOURCE_IP:
@@ -223,7 +355,13 @@ def _get_session_persistence(config):
         opts.append('appsession %s len 56 timeout 3h' %
                     persistence['cookie_name'])
 
-    return opts
+        # convert to dict if exists
+        if persistence.get('extra_actions'):
+            extra_action = jsonutils.loads(persistence.get('extra_actions'))
+            # push cookie_name to extra_action
+            extra_action['cookie_name'] = persistence.get('cookie_name')
+
+    return extra_action, opts
 
 
 def _has_http_cookie_persistence(config):

@@ -87,6 +87,20 @@ class RouterIsNotExternal(qexception.BadRequest):
     message = _("Router %(router_id)s has no external network gateway set")
 
 
+class BadProviderForIPsec(qexception.BadRequest):
+    message = _("Provider of VPN service %(vpnservice_id)s does not support "
+                "IPsec Connection.")
+
+
+class BadProviderForPPTP(qexception.BadRequest):
+    message = _("Provider of VPN services %(vpnservice_ids)s does not support "
+                "PPTP Connection.")
+
+
+class PPTPUsernameAlreadyExists(qexception.BadRequest):
+    message = _("Username %(username)s already exists.")
+
+
 vpn_supported_initiators = ['bi-directional', 'response-only']
 vpn_supported_encryption_algorithms = ['3des', 'aes-128',
                                        'aes-192', 'aes-256']
@@ -134,7 +148,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                            'convert_to': attr.convert_to_boolean,
                            'is_visible': True},
         'status': {'allow_post': False, 'allow_put': False,
-                   'is_visible': True}
+                   'is_visible': True},
+        'provider': {'allow_post': True, 'allow_put': False,
+                     'validate': {'type:string': None},
+                     'is_visible': True, 'default': attr.ATTR_NOT_SPECIFIED},
     },
 
     'ipsec_site_connections': {
@@ -330,6 +347,28 @@ RESOURCE_ATTRIBUTE_MAP = {
                 'default': 'group5',
                 'validate': {'type:values': vpn_supported_pfs},
                 'is_visible': True}
+    },
+
+    'pptp_credentials': {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True,
+               'primary_key': True},
+        'tenant_id': {'allow_post': True, 'allow_put': False,
+                      'validate': {'type:string': None},
+                      'required_by_policy': True,
+                      'is_visible': True},
+        'username': {'allow_post': True, 'allow_put': False,
+                     'validate': {'type:string': None},
+                     'is_visible': True},
+        'password': {'allow_post': True, 'allow_put': True,
+                     'validate': {'type:string': None},
+                     'is_visible': True},
+        'vpnservices': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:uuid_list': None},
+                        'convert_to': attr.convert_to_list,
+                        'default': attr.ATTR_NOT_SPECIFIED,
+                        'is_visible': True}
     }
 }
 
@@ -477,4 +516,25 @@ class VPNPluginBase(service_base.ServicePluginBase):
 
     @abc.abstractmethod
     def delete_ipsecpolicy(self, context, ipsecpolicy_id):
+        pass
+
+    @abc.abstractmethod
+    def get_pptp_credentials(self, context, filters=None, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def get_pptp_credential(self, context, pptp_credential_id, fields=None):
+        pass
+
+    @abc.abstractmethod
+    def create_pptp_credential(self, context, pptp_credential):
+        pass
+
+    @abc.abstractmethod
+    def update_pptp_credential(self, context, pptp_credential_id,
+                               pptp_credential):
+        pass
+
+    @abc.abstractmethod
+    def delete_pptp_credential(self, context, pptp_credential_id):
         pass

@@ -25,6 +25,7 @@ from neutron.db import common_db_mixin as base_db
 from neutron.db import l3_agentschedulers_db as l3_agent_db
 from neutron.db import l3_db
 from neutron.extensions import agent as ext_agent
+from neutron.extensions import l3 as ext_l3
 from neutron.extensions import qos as ext_qos
 from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
@@ -217,10 +218,17 @@ class QosDb(ext_qos.QosPluginBase, base_db.CommonDbMixin):
             try:
                 if target_type == 'port':
                     target = self._core_plugin._get_port(context, target_id)
-                    if not target['device_owner'].startswith('compute'):
+                    device_owner = target['device_owner']
+                    valid_port_target = False
+                    if device_owner == n_constants.DEVICE_OWNER_FLOATINGIP:
+                        if qos_direction == 'egress':
+                            valid_port_target = True
+                    elif device_owner.startswith('compute'):
+                        valid_port_target = True
+                    if not valid_port_target:
                         raise ext_qos.QosInvalidPortType(
                             port_id=target_id,
-                            port_type=target['device_owner'])
+                            port_type=device_owner)
                     ret['port_id'] = target_id
                 elif target_type == 'router':
                     target = self._l3_plugin._get_router(context, target_id)
@@ -660,6 +668,10 @@ class QosDb(ext_qos.QosPluginBase, base_db.CommonDbMixin):
 
 class QosPluginRpcDbMixin(object):
 
+    @staticmethod
+    def _is_owner_floatingip(device_owner):
+        return device_owner == n_constants.DEVICE_OWNER_FLOATINGIP
+
     def _get_devices_for_qos(self, qos):
         if qos.router:
             if qos.direction == 'egress':
@@ -677,7 +689,10 @@ class QosPluginRpcDbMixin(object):
                 ]
         elif qos.port:
             ports = [qos.port_id]
-            prefix = 'qvb' if qos.direction == 'egress' else 'qvo'
+            if self._is_owner_floatingip(qos.port.device_owner):
+                prefix = 'qg-'
+            else:
+                prefix = 'qvb' if qos.direction == 'egress' else 'qvo'
         return [("%s%s" % (prefix, port))[:NIC_NAME_LEN] for port in ports]
 
     def _make_qos_filter_dict_for_agent(self, qos_filter):
@@ -805,16 +820,22 @@ class QosPluginRpcDbMixin(object):
             namespace = None
             if qos.router_id:
                 namespace = 'qrouter-' + qos.router_id
-                if namespace not in qoss_on_host:
-                    qoss_on_host[namespace] = []
             elif qos.port_id:
-                if '_root' not in qoss_on_host:
-                    qoss_on_host['_root'] = []
-                namespace = '_root'
+                if self._is_owner_floatingip(qos.port.device_owner):
+                    try:
+                        fip = self._l3_plugin.get_floatingip(
+                            context, qos.port.device_id)
+                    except ext_l3.FloatingIPNotFound:
+                        continue
+                    namespace = 'qrouter-' + fip['router_id']
+                else:
+                    namespace = '_root'
 
             if namespace:
                 qos_for_agent = self._get_qos_for_agent(context, qos)
                 if qos_for_agent:
+                    if namespace not in qoss_on_host:
+                        qoss_on_host[namespace] = []
                     qoss_on_host[namespace].append(qos_for_agent)
 
         return qoss_on_host

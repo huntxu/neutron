@@ -1,0 +1,29 @@
+name {{name}}
+
+ipparam {{ipparam}}
+{{localip}}:
+# Refuse PAP, CHAP or MS-CHAP connections but accept connections with
+# MS-CHAPv2 or MPPE with 128-bit encryption
+refuse-pap
+refuse-chap
+refuse-mschap
+require-mschap-v2
+require-mppe-128
+
+# Add entry to the ARP system table
+proxyarp
+
+# For the serial device to ensure exclusive access to the device
+lock
+
+# Disable BSD-Compress and Van Jacobson TCP/IP header compression
+nobsdcomp
+novj
+novjccomp
+
+# Disable file logging
+nolog
+
+# DNS servers for Microsoft Windows clients. Using Google's public servers here
+ms-dns 8.8.8.8
+ms-dns 8.8.4.4

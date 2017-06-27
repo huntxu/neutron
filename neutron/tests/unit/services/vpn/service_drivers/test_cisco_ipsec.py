@@ -67,10 +67,12 @@ class TestCiscoValidatorSelection(base.BaseTestCase):
         mock.patch('neutron.db.servicetype_db.ServiceTypeManager.get_instance',
                    return_value=stm).start()
         mock.patch('neutron.common.rpc.create_connection').start()
+        mock.patch('neutron.db.vpn.vpn_db.VPNPluginDb.get_vpnservices',
+                   return_value=[{'provider': 'vpnaas'}]).start()
         self.vpn_plugin = vpn_plugin.VPNDriverPlugin()
 
     def test_reference_driver_used(self):
-        self.assertIsInstance(self.vpn_plugin._get_validator(),
+        self.assertIsInstance(self.vpn_plugin._get_validator('vpnaas'),
                               validator.CiscoCsrVpnValidator)
 
 

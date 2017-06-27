@@ -37,7 +37,7 @@ from neutron.tests.unit import test_db_plugin
 from neutron.tests.unit import test_l3_plugin
 
 DB_CORE_PLUGIN_KLASS = 'neutron.db.db_base_plugin_v2.NeutronDbPluginV2'
-DB_VPN_PLUGIN_KLASS = "neutron.services.vpn.plugin.VPNPlugin"
+DB_VPN_PLUGIN_KLASS = "neutron.services.vpn.plugin.VPNDriverPlugin"
 ROOTDIR = os.path.normpath(os.path.join(
     os.path.dirname(__file__),
     '..', '..', '..', '..'))
@@ -187,11 +187,13 @@ class VPNTestMixin(object):
     def _create_vpnservice(self, fmt, name,
                            admin_state_up,
                            router_id, subnet_id,
+                           provider='vpnaas',
                            expected_res_status=None, **kwargs):
         tenant_id = kwargs.get('tenant_id', self._tenant_id)
         data = {'vpnservice': {'name': name,
                                'subnet_id': subnet_id,
                                'router_id': router_id,
+                               'provider': provider,
                                'admin_state_up': admin_state_up,
                                'tenant_id': tenant_id}}
         if kwargs.get('description') is not None:
@@ -216,6 +218,7 @@ class VPNTestMixin(object):
                    plug_subnet=True,
                    external_subnet_cidr='192.168.100.0/24',
                    external_router=True,
+                   provider='vpnaas',
                    **kwargs):
         if not fmt:
             fmt = self.fmt
@@ -246,6 +249,7 @@ class VPNTestMixin(object):
                                                      ['id']),
                                           subnet_id=(tmp_subnet['subnet']
                                                      ['id']),
+                                          provider=provider,
                                           **kwargs)
             vpnservice = self.deserialize(fmt or self.fmt, res)
             if res.status_int < 400:

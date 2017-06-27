@@ -35,7 +35,8 @@ FAKE_VPN_CONNECTION = {
 }
 FAKE_ROUTER_ID = _uuid()
 FAKE_VPN_SERVICE = {
-    'router_id': FAKE_ROUTER_ID
+    'router_id': FAKE_ROUTER_ID,
+    'provider': 'fake_provider'
 }
 FAKE_HOST = 'fake_host'
 FAKE_ROUTER = {l3_db.EXTERNAL_GW_INFO: FAKE_ROUTER_ID}
@@ -60,10 +61,12 @@ class TestValidatorSelection(base.BaseTestCase):
         stm = st_db.ServiceTypeManager()
         mock.patch('neutron.db.servicetype_db.ServiceTypeManager.get_instance',
                    return_value=stm).start()
+        mock.patch('neutron.db.vpn.vpn_db.VPNPluginDb.get_vpnservices',
+                   return_value=[{'provider': 'vpnaas'}]).start()
         self.vpn_plugin = vpn_plugin.VPNDriverPlugin()
 
     def test_reference_driver_used(self):
-        self.assertIsInstance(self.vpn_plugin._get_validator(),
+        self.assertIsInstance(self.vpn_plugin._get_validator('vpnaas'),
                               vpn_validator.VpnReferenceValidator)
 
 
@@ -231,12 +234,14 @@ class TestIPsecDriver(base.BaseTestCase):
         get_service_plugin = service_plugin_p.start()
         get_service_plugin.return_value = {constants.L3_ROUTER_NAT: plugin}
 
-        service_plugin = mock.Mock()
-        service_plugin.get_l3_agents_hosting_routers.return_value = [l3_agent]
-        service_plugin._get_vpnservice.return_value = {
-            'router_id': _uuid()
+        self.service_plugin = mock.Mock()
+        self.service_plugin.get_l3_agents_hosting_routers.return_value = [
+            l3_agent]
+        self.service_plugin._get_vpnservice.return_value = {
+            'router_id': _uuid(),
+            'provider': 'fake_provider'
         }
-        self.driver = ipsec_driver.IPsecVPNDriver(service_plugin)
+        self.driver = ipsec_driver.IPsecVPNDriver(self.service_plugin)
 
     def _test_update(self, func, args):
         ctxt = n_ctx.Context('', 'somebody')

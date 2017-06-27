@@ -21,6 +21,7 @@ FIREWALL = "FIREWALL"
 VPN = "VPN"
 METERING = "METERING"
 L3_ROUTER_NAT = "L3_ROUTER_NAT"
+ES_METERING = "ES_METERING"
 
 
 #maps extension alias to service type
@@ -82,3 +83,8 @@ TYPE_NONE = 'none'
 
 # Values for network_type
 VXLAN_UDP_PORT = 4789
+
+# LoadBalancer L7
+LOADBALANCER_L7POLICY_ACTIONS = ['block', 'redirect', 'addHeader']
+LOADBALANCER_L7RULE_TYPES = ['backendServerId']
+LOADBALANCER_L7RULE_COMPARE_TYPES = ['integerEq']

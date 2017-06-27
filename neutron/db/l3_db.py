@@ -342,8 +342,14 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         if not port_requires_deletion:
             return
         admin_ctx = context.elevated()
-        if self.get_floatingips_count(
-            admin_ctx, {'router_id': [router_id]}):
+        fip_qry = context.session.query(FloatingIP)
+        fip_qry = fip_qry.join(
+            models_v2.Port,
+            FloatingIP.floating_port_id == models_v2.Port.id)
+        fip_qry = fip_qry.filter(
+            models_v2.Port.status == l3_constants.PORT_STATUS_DOWN,
+            FloatingIP.router_id == router_id)
+        if fip_qry.all():
             raise l3.RouterExternalGatewayInUseByFloatingIp(
                 router_id=router_id, net_id=router.gw_port['network_id'])
         with context.session.begin(subtransactions=True):
@@ -701,7 +707,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
         router_port = routerport_qry.first()
 
-        if router_port and router_port.router.gw_port:
+        if router_port:
             return router_port.router.id
 
         raise l3.ExternalGatewayForFloatingIPNotFound(
@@ -1137,7 +1143,17 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         """Query floating_ips that relate to list of router_ids."""
         if not router_ids:
             return []
-        return self.get_floatingips(context, {'router_id': router_ids})
+        fip_dict = {}
+        for fip in self.get_floatingips(context, {'router_id': router_ids}):
+            fip_dict[fip['id']] = fip
+        if not fip_dict:
+            return []
+        port_filters = {'device_id': fip_dict.keys()}
+        ports = self._core_plugin.get_ports(context, port_filters)
+        self._populate_subnet_for_ports(context, ports)
+        for port in ports:
+            fip_dict[port['device_id']]['port'] = port
+        return fip_dict.values()
 
     def _get_sync_portmappings(self, context, router_ids):
         """Query portmappings that relate to list of router_ids."""
