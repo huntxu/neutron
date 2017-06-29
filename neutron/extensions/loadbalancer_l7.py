@@ -46,7 +46,7 @@ class L7ruleNotFound(qexception.NotFound):
     message = _("L7rule %(l7rule_id)s could not be found")
 
 
-class L7ruleInUse(qexception.NotFound):
+class L7ruleInUse(qexception.InUse):
     message = _("L7rule %(l7rule_id)s still in use")
 
 
