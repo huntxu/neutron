@@ -285,6 +285,12 @@ def _build_backend(config):
             if need_server_id:
                 server += ' id %d' % _get_acl_member_id(member['id'])
 
+            # add health check address and port opt
+            if member['monitor_address'] is not None:
+                server += ' addr %s' % member['monitor_address']
+            if member['monitor_port'] is not None:
+                server += ' port %s' % member['monitor_port']
+
             if _has_http_cookie_persistence(config):
                 server += ' cookie %d' % config['members'].index(member)
             member_opts.append(server)

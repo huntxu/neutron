@@ -110,6 +110,8 @@ class Member(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
     weight = sa.Column(sa.Integer, nullable=False)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     priority = sa.Column(sa.Integer, nullable=False, default=256)
+    monitor_address = sa.Column(sa.String(64), nullable=True)
+    monitor_port = sa.Column(sa.Integer, nullable=True)
 
 
 class Pool(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant,
@@ -817,6 +819,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                'weight': member['weight'],
                'admin_state_up': member['admin_state_up'],
                'priority': member['priority'],
+               'monitor_address': member['monitor_address'],
+               'monitor_port': member['monitor_port'],
                'status': member['status'],
                'status_description': member['status_description']}
 
@@ -836,6 +840,8 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
                                    address=v['address'],
                                    protocol_port=v['protocol_port'],
                                    weight=v['weight'],
+                                   monitor_address=v['monitor_address'],
+                                   monitor_port=v['monitor_port'],
                                    admin_state_up=v['admin_state_up'],
                                    status=constants.PENDING_CREATE)
                 if attributes.is_attr_set(v['priority']):

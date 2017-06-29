@@ -278,7 +278,16 @@ RESOURCE_ATTRIBUTE_MAP = {
         'status': {'allow_post': False, 'allow_put': False,
                    'is_visible': True},
         'status_description': {'allow_post': False, 'allow_put': False,
-                               'is_visible': True}
+                               'is_visible': True},
+        'monitor_address': {'allow_post': True, 'allow_put': True,
+                            'validate': {'type:ip_address_or_none': None},
+                            'default': None,
+                            'is_visible': True},
+        'monitor_port': {'allow_post': True, 'allow_put': True,
+                         'validate': {'type:range_or_none': [1, 65535]},
+                         'default': None,
+                         'convert_to': attr.convert_to_int_if_not_none,
+                         'is_visible': True}
     },
     'health_monitors': {
         'id': {'allow_post': False, 'allow_put': False,
