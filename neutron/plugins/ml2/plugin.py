@@ -778,7 +778,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             # the fact that an error occurred.
             LOG.error(_("mechanism_manager.delete_subnet_postcommit failed"))
 
-    def create_port(self, context, port):
+    def create_port(self, context, port, check_fixed_ips_amount=True):
         attrs = port['port']
         attrs['status'] = const.PORT_STATUS_DOWN
 
@@ -787,7 +787,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             self._ensure_default_security_group_on_port(context, port)
             sgids = self._get_security_groups_on_port(context, port)
             dhcp_opts = port['port'].get(edo_ext.EXTRADHCPOPTS, [])
-            result = super(Ml2Plugin, self).create_port(context, port)
+            result = super(Ml2Plugin, self).create_port(
+                context, port, check_fixed_ips_amount=check_fixed_ips_amount)
             self.extension_manager.process_create_port(session, attrs, result)
             self._process_port_create_security_group(context, result, sgids)
             network = self.get_network(context, result['network_id'])
@@ -829,7 +830,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 self.delete_port(context, result['id'])
         return bound_context._port
 
-    def update_port(self, context, id, port):
+    def update_port(self, context, id, port, check_fixed_ips_amount=True):
         attrs = port['port']
         need_port_update_notify = False
 
@@ -845,8 +846,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             if not port_db:
                 raise exc.PortNotFound(port_id=id)
             original_port = self._make_port_dict(port_db)
-            updated_port = super(Ml2Plugin, self).update_port(context, id,
-                                                              port)
+            updated_port = super(Ml2Plugin, self).update_port(
+                context, id, port,
+                check_fixed_ips_amount=check_fixed_ips_amount)
             self.extension_manager.process_update_port(session, attrs,
                                                        original_port)
             if addr_pair.ADDRESS_PAIRS in port['port']:

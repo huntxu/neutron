@@ -394,7 +394,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 return True
         return False
 
-    def _test_fixed_ips_for_port(self, context, network_id, fixed_ips):
+    def _test_fixed_ips_for_port(self, context, network_id, fixed_ips,
+                                 check_fixed_ips_amount=True):
         """Test fixed IPs for port.
 
         Check that configured subnets are valid prior to allocating any
@@ -454,7 +455,10 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                                      'ip_address': fixed['ip_address']})
             else:
                 fixed_ip_set.append({'subnet_id': subnet_id})
-        if len(fixed_ip_set) > cfg.CONF.max_fixed_ips_per_port:
+        if (
+                check_fixed_ips_amount and
+                len(fixed_ip_set) > cfg.CONF.max_fixed_ips_per_port
+        ):
             msg = _('Exceeded maximim amount of fixed ips per port')
             raise n_exc.InvalidInput(error_message=msg)
         return fixed_ip_set
@@ -480,14 +484,17 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
         return ips
 
     def _update_ips_for_port(self, context, network_id, port_id, original_ips,
-                             new_ips):
+                             new_ips, check_fixed_ips_amount=True):
         """Add or remove IPs from the port."""
         ips = []
         # These ips are still on the port and haven't been removed
         prev_ips = []
 
         # the new_ips contain all of the fixed_ips that are to be updated
-        if len(new_ips) > cfg.CONF.max_fixed_ips_per_port:
+        if (
+                check_fixed_ips_amount and
+                len(new_ips) > cfg.CONF.max_fixed_ips_per_port
+        ):
             msg = _('Exceeded maximim amount of fixed ips per port')
             raise n_exc.InvalidInput(error_message=msg)
 
@@ -501,7 +508,9 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                     prev_ips.append(original_ip)
 
         # Check if the IP's to add are OK
-        to_add = self._test_fixed_ips_for_port(context, network_id, new_ips)
+        to_add = self._test_fixed_ips_for_port(
+            context, network_id, new_ips,
+            check_fixed_ips_amount=check_fixed_ips_amount)
         for ip in original_ips:
             LOG.debug(_("Port update. Hold %s"), ip)
             NeutronDbPluginV2._delete_ip_allocation(context,
@@ -514,7 +523,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             ips = self._allocate_fixed_ips(context, to_add)
         return ips, prev_ips
 
-    def _allocate_ips_for_port(self, context, port):
+    def _allocate_ips_for_port(self, context, port,
+                               check_fixed_ips_amount=True):
         """Allocate IP addresses for the port.
 
         If port['fixed_ips'] is set to 'ATTR_NOT_SPECIFIED', allocate IP
@@ -526,9 +536,9 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
 
         fixed_configured = p['fixed_ips'] is not attributes.ATTR_NOT_SPECIFIED
         if fixed_configured:
-            configured_ips = self._test_fixed_ips_for_port(context,
-                                                           p["network_id"],
-                                                           p['fixed_ips'])
+            configured_ips = self._test_fixed_ips_for_port(
+                context, p["network_id"], p['fixed_ips'],
+                check_fixed_ips_amount=check_fixed_ips_amount)
             ips = self._allocate_fixed_ips(context, configured_ips)
         else:
             filter = {'network_id': [p['network_id']]}
@@ -1290,7 +1300,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
     def create_port_bulk(self, context, ports):
         return self._create_bulk('port', context, ports)
 
-    def create_port(self, context, port):
+    def create_port(self, context, port, check_fixed_ips_amount=True):
         p = port['port']
         port_id = p.get('id') or uuidutils.generate_uuid()
         network_id = p['network_id']
@@ -1338,7 +1348,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
             context.session.add(db_port)
 
             # Update the IP's for the port
-            ips = self._allocate_ips_for_port(context, port)
+            ips = self._allocate_ips_for_port(
+                context, port, check_fixed_ips_amount=check_fixed_ips_amount)
             if ips:
                 for ip in ips:
                     ip_address = ip['ip_address']
@@ -1348,7 +1359,7 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
 
         return self._make_port_dict(db_port, process_extensions=False)
 
-    def update_port(self, context, id, port):
+    def update_port(self, context, id, port, check_fixed_ips_amount=True):
         p = port['port']
 
         changed_ips = False
@@ -1378,7 +1389,8 @@ class NeutronDbPluginV2(neutron_plugin_base_v2.NeutronPluginBaseV2,
                 original = self._make_port_dict(port, process_extensions=False)
                 added_ips, prev_ips = self._update_ips_for_port(
                     context, port["network_id"], id, original["fixed_ips"],
-                    p['fixed_ips'])
+                    p['fixed_ips'],
+                    check_fixed_ips_amount=check_fixed_ips_amount)
 
                 # Update ips if necessary
                 for ip in added_ips:
