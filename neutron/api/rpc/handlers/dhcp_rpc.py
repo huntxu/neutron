@@ -58,9 +58,11 @@ class DhcpRpcCallback(n_rpc.RpcCallback):
         """Perform port operations taking care of concurrency issues."""
         try:
             if action == 'create_port':
-                return plugin.create_port(context, port)
+                return plugin.create_port(context, port,
+                                          check_fixed_ips_amount=False)
             elif action == 'update_port':
-                return plugin.update_port(context, port['id'], port['port'])
+                return plugin.update_port(context, port['id'], port['port'],
+                                          check_fixed_ips_amount=False)
             else:
                 msg = _('Unrecognized action')
                 raise n_exc.Invalid(message=msg)
@@ -172,7 +174,8 @@ class DhcpRpcCallback(n_rpc.RpcCallback):
                     [dict(subnet_id=s) for s in dhcp_enabled_subnet_ids])
 
                 retval = plugin.update_port(context, port['id'],
-                                            dict(port=port))
+                                            dict(port=port),
+                                            check_fixed_ips_amount=False)
 
         except n_exc.NotFound as e:
             LOG.warning(e)
@@ -247,7 +250,8 @@ class DhcpRpcCallback(n_rpc.RpcCallback):
                 if fixed_ips[i]['subnet_id'] == subnet_id:
                     del fixed_ips[i]
                     break
-            plugin.update_port(context, port['id'], dict(port=port))
+            plugin.update_port(context, port['id'], dict(port=port),
+                               check_fixed_ips_amount=False)
 
     def update_lease_expiration(self, context, **kwargs):
         """Release the fixed_ip associated the subnet on a port."""
