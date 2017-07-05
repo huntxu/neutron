@@ -292,6 +292,7 @@ class DhcpRpcCallback(n_rpc.RpcCallback):
                     'from %(host)s.'),
                   {'port': port,
                    'host': host})
+        port['port'][portbindings.HOST_ID] = host
         plugin = manager.NeutronManager.get_plugin()
         return self._port_action(plugin, context,
                                  {'id': port_id, 'port': port},
