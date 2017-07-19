@@ -151,7 +151,7 @@ class FirewallRuleConflict(qexception.Conflict):
                 "another tenant %(tenant_id)s")
 
 
-fw_valid_protocol_values = [None, constants.TCP, constants.UDP, constants.ICMP
+fw_valid_protocol_values = [None, constants.TCP, constants.UDP, constants.ICMP,
                             constants.SCTP, constants.GRE,
                             constants.ESP, constants.AH]
 fw_valid_action_values = [constants.FWAAS_ALLOW, constants.FWAAS_DENY]
