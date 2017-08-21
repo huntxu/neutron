@@ -49,8 +49,14 @@ SUPPORTED_HTTP_METHODS = (HTTP_METHOD_GET, HTTP_METHOD_HEAD, HTTP_METHOD_POST,
 #         pct-encoded   = "%" HEXDIG HEXDIG
 #         sub-delims    = "!" / "$" / "&" / "'" / "(" / ")"
 #                         / "*" / "+" / "," / ";" / "="
+#         query = *( pchar / "/" / "?" )
+#         fragment = *( pchar / "/" / "?" )
+#
+PCHAR = "[a-zA-Z0-9-._~!$&\'()*+,;=:@]|(%[a-fA-F0-9]{2})"
 SUPPORTED_URL_PATH = (
-        "^(/([a-zA-Z0-9-._~!$&\'()*+,;=:@]|(%[a-fA-F0-9]{2}))*)+$")
+        "^(/(%s)*)+(\?((%s)|[/\?])*)?(#((%s)|[/\?])*)?$" % (
+            PCHAR, PCHAR, PCHAR
+        ))
 
 SESSION_PERSISTENCE_SOURCE_IP = 'SOURCE_IP'
 SESSION_PERSISTENCE_HTTP_COOKIE = 'HTTP_COOKIE'
