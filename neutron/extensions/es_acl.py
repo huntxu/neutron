@@ -19,6 +19,7 @@ import six
 from neutron.api import extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
+from neutron.common import exceptions
 from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants
 from neutron.services import service_base
@@ -26,6 +27,18 @@ from neutron.services import service_base
 LOG = logging.getLogger(__name__)
 
 ACL_VALID_ACTION_VALUES = [constants.FWAAS_ALLOW, constants.FWAAS_DENY]
+
+
+class AclNotFound(exceptions.NotFound):
+    message = _("ACL %(acl_id)s could not be found.")
+
+
+class AclInUse(exceptions.InUse):
+    message = _("ACL %(acl_id)s is used by subnets %(subnets)s.")
+
+
+class AclRuleNotFound(exceptions.NotFound):
+    message = _("ACL %(acl_rule_id)s could not be found.")
 
 
 def _validate_acl_ipaddr(data, valid_values=None):
