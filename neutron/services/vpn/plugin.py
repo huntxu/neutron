@@ -209,14 +209,16 @@ class VPNDriverPlugin(VPNPlugin, vpn_db.VPNPluginRpcDbMixin):
         return ipsec_site_connection
 
     def create_pptp_credential(self, context, pptp_credential):
-        self._check_drivers_for_pptp_credential(context, pptp_credential)
+        self._check_drivers_for_pptp_credential(
+            context, pptp_credential['pptp_credential'])
         return super(
             VPNDriverPlugin, self
         ).create_pptp_credential(context, pptp_credential)
 
     def update_pptp_credential(self, context, pptp_credential_id,
                                pptp_credential):
-        self._check_drivers_for_pptp_credential(context, pptp_credential)
+        self._check_drivers_for_pptp_credential(
+            context, pptp_credential['pptp_credential'])
         return super(
             VPNDriverPlugin, self
         ).update_pptp_credential(context, pptp_credential_id, pptp_credential)
