@@ -16,6 +16,7 @@
 import six
 
 from neutron.agent.linux import iptables_manager
+from neutron.agent.linux.nfacct import NfacctMixin
 from neutron.common import constants as constants
 from neutron.common import log
 from neutron.openstack.common import log as logging
@@ -46,8 +47,8 @@ class EsRouterWithMetering(iptables_driver.RouterWithMetering):
             iptables_driver.EXTERNAL_DEV_PREFIX, ES_METERING_MARK)
         im.ipv4['mangle'].add_rule('PREROUTING', mark_rule)
 
-    def iter_metering_labels(self):
-        return self.metering_labels.items() + self.es_metering_labels.items()
+    def get_metering_labels(self):
+        return self.metering_labels.keys() + self.es_metering_labels.keys()
 
 
 class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
@@ -104,7 +105,7 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
                 self._process_associate_es_metering_label(router)
 
     @staticmethod
-    def _get_es_meter_rule(label, label_chain):
+    def _get_es_meter_rule(label):
         rule_parts = []
         if label['direction'] == 'ingress':
             rule_parts += ['-m mark --mark %s' % ES_METERING_MARK]
@@ -121,38 +122,31 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
         if label['tcp_port'] is not None:
             rule_parts += ['-p tcp %s %s' % (port_selector, label['tcp_port'])]
 
-        rule_parts += ['-j %s' % label_chain]
+        rule_parts += [NfacctMixin.get_nfacct_rule_part(label['id'])]
 
         return ' '.join(rule_parts)
 
-    @staticmethod
-    def _get_label_chain_name(label_id):
-        return iptables_manager.get_chain_name(
-            iptables_driver.WRAP_NAME + iptables_driver.LABEL + label_id,
-            wrap=False)
-
     def _add_es_metering_label(self, rm, label):
         table = rm.iptables_manager.ipv4['mangle']
-        label_id = label['id']
-        label_chain = self._get_label_chain_name(label_id)
-        table.add_chain(label_chain, wrap=False)
-        es_meter_rule = self._get_es_meter_rule(label, label_chain)
+        rm.iptables_manager.add_nfacct_object(label['id'])
+        es_meter_rule = self._get_es_meter_rule(label)
         table.add_rule('POSTROUTING', es_meter_rule)
         if label['internal_ip'] is None and label['direction'] == 'ingress':
             # If internal IP is unspecified, we should also count traffic
             # directed to the router itself.
             table.add_rule('INPUT', es_meter_rule)
-        table.add_rule(label_chain, '', wrap=False)
-        rm.es_metering_labels[label_id] = label
+        rm.es_metering_labels[label['id']] = label
 
     def _remove_es_metering_label(self, rm, label_id):
         table = rm.iptables_manager.ipv4['mangle']
-        if label_id not in rm.es_metering_labels:
+        label = rm.es_metering_labels.pop(label_id, None)
+        if label is None:
             return
-        label_chain = self._get_label_chain_name(label_id)
-        table.remove_chain(label_chain, wrap=False)
 
-        del rm.es_metering_labels[label_id]
+        es_meter_rule = self._get_es_meter_rule(label)
+        table.remove_rule('POSTROUTING', es_meter_rule)
+        if label['internal_ip'] is None and label['direction'] == 'ingress':
+            table.remove_rule('INPUT', es_meter_rule)
 
     def _process_associate_es_metering_label(self, router):
         self._update_router(router)
