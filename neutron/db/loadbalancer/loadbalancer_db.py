@@ -421,8 +421,9 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
             sess_qry = context.session.query(SessionPersistence)
             sess_qry.filter_by(vip_id=vip_id).delete()
 
-    def _vip_port_has_exist(self, context, vip_db, ip_addr):
-        port_filter = {'fixed_ips': {'ip_address': [ip_addr]}}
+    def _vip_port_has_exist(self, context, vip_db, fixed_ip):
+        port_filter = {'fixed_ips': {'ip_address': [fixed_ip['ip_address']],
+                                     'subnet_id': [fixed_ip['subnet_id']]}}
 
         ports = self._core_plugin.get_ports(context, filters=port_filter)
         if ports:
@@ -447,7 +448,7 @@ class LoadBalancerPluginDb(loadbalancer.LoadBalancerPluginBase,
         if ip_address and ip_address != attributes.ATTR_NOT_SPECIFIED:
             fixed_ip['ip_address'] = ip_address
             # check if vip port has exist
-            port = self._vip_port_has_exist(context, vip_db, ip_address)
+            port = self._vip_port_has_exist(context, vip_db, fixed_ip)
             if port:
                 need_create_port = False
 
