@@ -156,6 +156,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             else:
                 ipt_rule = '%s %s' % (
                     dir_opt, NfacctMixin.get_nfacct_rule_part(label_id))
+                im.add_nfacct_object(label_id)
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
                                            wrap=False, top=False)
 
