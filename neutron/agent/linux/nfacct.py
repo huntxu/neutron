@@ -46,10 +46,28 @@ class NfacctMixin(object):
             cmd = ['ip', 'netns', 'exec', self.namespace] + cmd
         return cmd
 
+    def get_objects(self):
+        args = self._ns_wrap_cmd(['nfacct', 'list', 'json'])
+        try:
+            nfacct_out = self.execute(args, root_helper=self.root_helper)
+        except RuntimeError:
+            return set()
+
+        if not nfacct_out:
+            return set()
+
+        return set(
+            counter['name']
+            for counter in json.loads(nfacct_out)['nfacct_counters']
+        )
+
     def add_nfacct_objects(self, nfacct_objects):
         args_prefix = self._ns_wrap_cmd(['nfacct', 'add'])
+        existing_objests = self.get_objects()
         for nfacct_object in nfacct_objects:
             nfacct_object_name = self._get_nfacct_object_name(nfacct_object)
+            if nfacct_object_name in existing_objests:
+                continue
             args = args_prefix + [nfacct_object_name]
             self.execute(args, root_helper=self.root_helper,
                          check_exit_code=False)
