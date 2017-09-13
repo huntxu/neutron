@@ -16,7 +16,7 @@
 import six
 
 from neutron.agent.linux import iptables_manager
-from neutton.agent.linux.nfacct import NfacctMixin
+from neutron.agent.linux.nfacct import NfacctMixin
 from neutron.common import constants as constants
 from neutron.common import log
 from neutron.openstack.common import log as logging

@@ -20,7 +20,7 @@ import eventlet
 from neutron.agent.common import config
 from neutron.agent.linux import iptables_manager
 from neutron.agent.linux import interface
-from neutton.agent.linux.nfacct import NfacctMixin, NfacctIptablesManager
+from neutron.agent.linux.nfacct import NfacctMixin, NfacctIptablesManager
 from neutron.common import constants as constants
 from neutron.common import ipv6_utils
 from neutron.common import log
