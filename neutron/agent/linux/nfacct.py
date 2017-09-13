@@ -72,6 +72,9 @@ class NfacctMixin(object):
         except RuntimeError:
             return None
 
+        if not nfacct_out:
+            return None
+
         parsed_accs = self.parse_nfacct_output(nfacct_out)
         ret_accs = {}
         for nfacct_object in nfacct_objects:
