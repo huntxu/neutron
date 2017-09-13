@@ -35,7 +35,6 @@ WRAP_NAME = 'neutron-meter'
 EXTERNAL_DEV_PREFIX = 'qg-'
 TOP_CHAIN = WRAP_NAME + "-local"
 RULE = '-r-'
-LABEL = '-l-'
 
 config.register_interface_driver_opts_helper(cfg.CONF)
 config.register_use_namespaces_opts_helper(cfg.CONF)
@@ -227,9 +226,6 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             for label in labels:
                 label_id = label['id']
 
-                label_chain = iptables_manager.get_chain_name(WRAP_NAME +
-                                                              LABEL + label_id,
-                                                              wrap=False)
                 rules_chain = iptables_manager.get_chain_name(WRAP_NAME +
                                                               RULE + label_id,
                                                               wrap=False)
@@ -239,7 +235,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                 rules = label.get('rules')
                 if rules:
                     self._process_metering_label_rules(rm, rules,
-                                                       label_chain,
+                                                       label_id,
                                                        rules_chain)
 
     @log.log
