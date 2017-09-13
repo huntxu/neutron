@@ -15,9 +15,12 @@
 from oslo.config import cfg
 import six
 
+import eventlet
+
 from neutron.agent.common import config
-from neutron.agent.linux import interface
 from neutron.agent.linux import iptables_manager
+from neutron.agent.linux import interface
+from neutton.agent.linux.nfacct import NfacctMixin, NfacctIptablesManager
 from neutron.common import constants as constants
 from neutron.common import ipv6_utils
 from neutron.common import log
@@ -71,7 +74,7 @@ class RouterWithMetering(object):
         self.router = router
         self.root_helper = config.get_root_helper(self.conf)
         self.ns_name = NS_PREFIX + self.id if conf.use_namespaces else None
-        self.iptables_manager = iptables_manager.IptablesManager(
+        self.iptables_manager = NfacctIptablesManager(
             root_helper=self.root_helper,
             namespace=self.ns_name,
             binary_name=WRAP_NAME,
@@ -133,8 +136,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         if router_id in self.routers:
             del self.routers[router_id]
 
-    def _process_metering_label_rules(self, rm, rules, label_chain,
-                                      rules_chain):
+    def _process_metering_label_rules(self, rm, rules, label_id, rules_chain):
         im = rm.iptables_manager
         if not rm.router['gw_port_id']:
             return
@@ -153,7 +155,8 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
                                            wrap=False, top=True)
             else:
-                ipt_rule = '%s -j %s' % (dir_opt, label_chain)
+                ipt_rule = '%s %s' % (
+                    dir_opt, NfacctMixin.get_nfacct_rule_part(label_id))
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
                                            wrap=False, top=False)
 
@@ -166,12 +169,6 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             for label in labels:
                 label_id = label['id']
 
-                label_chain = iptables_manager.get_chain_name(WRAP_NAME +
-                                                              LABEL + label_id,
-                                                              wrap=False)
-                rm.iptables_manager.ipv4['filter'].add_chain(label_chain,
-                                                             wrap=False)
-
                 rules_chain = iptables_manager.get_chain_name(WRAP_NAME +
                                                               RULE + label_id,
                                                               wrap=False)
@@ -181,14 +178,10 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                                                             rules_chain,
                                                             wrap=False)
 
-                rm.iptables_manager.ipv4['filter'].add_rule(label_chain,
-                                                            '',
-                                                            wrap=False)
-
                 rules = label.get('rules')
                 if rules:
                     self._process_metering_label_rules(rm, rules,
-                                                       label_chain,
+                                                       label_id,
                                                        rules_chain)
 
                 rm.metering_labels[label_id] = label
@@ -205,15 +198,10 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                 if label_id not in rm.metering_labels:
                     continue
 
-                label_chain = iptables_manager.get_chain_name(WRAP_NAME +
-                                                              LABEL + label_id,
-                                                              wrap=False)
                 rules_chain = iptables_manager.get_chain_name(WRAP_NAME +
                                                               RULE + label_id,
                                                               wrap=False)
 
-                rm.iptables_manager.ipv4['filter'].remove_chain(label_chain,
-                                                                wrap=False)
                 rm.iptables_manager.ipv4['filter'].remove_chain(rules_chain,
                                                                 wrap=False)
 
@@ -259,43 +247,41 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         for router in routers:
             self._process_disassociate_metering_label(router)
 
+    def get_traffic_counter(self, router):
+        router_id = router['id']
+        rm = self.routers.get(router_id)
+        if not rm:
+            return (True, router_id, {})
+
+        label_ids = rm.metering_labels.keys()
+        accs = rm.iptables_manager.get_result(label_ids)
+        if accs is None:
+            return (False, router_id, {})
+
+        missing_labels = set(label_ids) - set(accs.keys())
+        successful = False if missing_labels else True
+        for label_id in missing_labels:
+            LOG.warn("Missing counter for label %s.", label_id)
+        return (successful, router_id, accs)
+
     @log.log
     def get_traffic_counters(self, context, routers):
         accs = {}
         routers_to_reconfigure = []
-        for router in routers:
-            rm = self.routers.get(router['id'])
-            if not rm:
-                continue
 
-            router_to_reconfigure = False
-            for label_id, label in rm.iter_metering_labels():
-                try:
-                    chain = iptables_manager.get_chain_name(WRAP_NAME +
-                                                            LABEL +
-                                                            label_id,
-                                                            wrap=False)
-
-                    chain_acc = rm.iptables_manager.get_traffic_counters(
-                        chain, wrap=False, zero=True)
-                except RuntimeError:
-                    LOG.exception(_('Failed to get traffic counters, '
-                                    'router: %s'), router)
-                    router_to_reconfigure = True
-                    continue
-
-                if not chain_acc:
-                    continue
-
+        pool = eventlet.greenpool.GreenPool()
+        for successful, router_id, acc in pool.imap(
+            self.get_traffic_counter, routers
+        ):
+            if not successful:
+                routers_to_reconfigure.append(router_id)
+                LOG.exception(_('Failed to get traffic counters, '
+                                'router: %s'), router_id)
+            for label_id, label_acc in acc.items():
                 acc = accs.get(label_id, {'pkts': 0, 'bytes': 0})
-
-                acc['pkts'] += chain_acc['pkts']
-                acc['bytes'] += chain_acc['bytes']
-
+                acc['pkts'] += label_acc['pkts']
+                acc['bytes'] += label_acc['bytes']
                 accs[label_id] = acc
-
-            if router_to_reconfigure:
-                routers_to_reconfigure.append(router['id'])
 
         for router_id in routers_to_reconfigure:
             self.routers.pop(router_id, None)
