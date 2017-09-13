@@ -47,8 +47,8 @@ class EsRouterWithMetering(iptables_driver.RouterWithMetering):
             iptables_driver.EXTERNAL_DEV_PREFIX, ES_METERING_MARK)
         im.ipv4['mangle'].add_rule('PREROUTING', mark_rule)
 
-    def iter_metering_labels(self):
-        return self.metering_labels.items() + self.es_metering_labels.items()
+    def get_metering_labels(self):
+        return self.metering_labels.keys() + self.es_metering_labels.keys()
 
 
 class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):

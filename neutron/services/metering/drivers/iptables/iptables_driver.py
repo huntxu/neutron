@@ -81,8 +81,8 @@ class RouterWithMetering(object):
             use_ipv6=ipv6_utils.is_enabled())
         self.metering_labels = {}
 
-    def iter_metering_labels(self):
-        return self.metering_labels.items()
+    def get_metering_labels(self):
+        return self.metering_labels.keys()
 
 
 class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
@@ -250,7 +250,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         if not rm:
             return (True, router_id, {})
 
-        label_ids = rm.metering_labels.keys()
+        label_ids = rm.get_metering_labels()
         accs = rm.iptables_manager.get_result(label_ids)
         if accs is None:
             return (False, router_id, {})
