@@ -20,7 +20,7 @@ import eventlet
 from neutron.agent.common import config
 from neutron.agent.linux import iptables_manager
 from neutron.agent.linux import interface
-from neutton.agent.linux.nfacct import NfacctMixin, NfacctIptablesManager
+from neutron.agent.linux.nfacct import NfacctMixin, NfacctIptablesManager
 from neutron.common import constants as constants
 from neutron.common import ipv6_utils
 from neutron.common import log
@@ -35,7 +35,6 @@ WRAP_NAME = 'neutron-meter'
 EXTERNAL_DEV_PREFIX = 'qg-'
 TOP_CHAIN = WRAP_NAME + "-local"
 RULE = '-r-'
-LABEL = '-l-'
 
 config.register_interface_driver_opts_helper(cfg.CONF)
 config.register_use_namespaces_opts_helper(cfg.CONF)
@@ -157,6 +156,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             else:
                 ipt_rule = '%s %s' % (
                     dir_opt, NfacctMixin.get_nfacct_rule_part(label_id))
+                im.add_nfacct_object(label_id)
                 im.ipv4['filter'].add_rule(rules_chain, ipt_rule,
                                            wrap=False, top=False)
 
@@ -227,9 +227,6 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
             for label in labels:
                 label_id = label['id']
 
-                label_chain = iptables_manager.get_chain_name(WRAP_NAME +
-                                                              LABEL + label_id,
-                                                              wrap=False)
                 rules_chain = iptables_manager.get_chain_name(WRAP_NAME +
                                                               RULE + label_id,
                                                               wrap=False)
@@ -239,7 +236,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                 rules = label.get('rules')
                 if rules:
                     self._process_metering_label_rules(rm, rules,
-                                                       label_chain,
+                                                       label_id,
                                                        rules_chain)
 
     @log.log
