@@ -276,11 +276,6 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                                 'router: %s'), router_id)
             for label_id, label_acc in acc.items():
                 acc = accs.get(label_id, {'pkts': 0, 'bytes': 0})
-                # Hack for kernel without nfacct per netns support.
-                # Kernel commit 3499abb249bb5ed9d21031944bc3059ec4aa2909
-                # Count metering label only once.
-                if acc['pkts'] != 0 or acc['bytes'] != 0:
-                    continue
                 acc['pkts'] += label_acc['pkts']
                 acc['bytes'] += label_acc['bytes']
                 accs[label_id] = acc
