@@ -97,6 +97,8 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         LOG.info(_("Loading interface driver %s"), self.conf.interface_driver)
         self.driver = importutils.import_object(self.conf.interface_driver,
                                                 self.conf)
+        self.dummy_iptables_manager = NfacctIptablesManager(
+            root_helper=plugin.root_helper)
 
     def _update_router(self, router):
         r = self.routers.get(router['id'],
@@ -264,21 +266,36 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
     @log.log
     def get_traffic_counters(self, context, routers):
         accs = {}
+        router_label_map = {}
         routers_to_reconfigure = []
 
-        pool = eventlet.greenpool.GreenPool()
-        for successful, router_id, acc in pool.imap(
-            self.get_traffic_counter, routers
-        ):
-            if not successful:
+        # Hack for kernel without nfacct per netns support.
+        # Kernel commit 3499abb249bb5ed9d21031944bc3059ec4aa2909
+        # Count metering label only once.
+        label_ids = set()
+        for router in routers:
+            router_id = router['id']
+            rm = self.routers.get(router_id)
+            if not rm:
+                continue
+            router_label_ids = set(rm.get_metering_labels())
+            router_label_map[router_id] = router_label_ids
+            label_ids.update(router_label_ids)
+
+        accs = self.dummy_iptables_manager.get_result(label_ids)
+        if accs is None:
+            accs = {}
+
+        for router_id, label_ids in router_label_map.items():
+            missing_labels = label_ids - set(accs.keys())
+            if missing_labels:
                 routers_to_reconfigure.append(router_id)
                 LOG.exception(_('Failed to get traffic counters, '
                                 'router: %s'), router_id)
-            for label_id, label_acc in acc.items():
-                acc = accs.get(label_id, {'pkts': 0, 'bytes': 0})
-                acc['pkts'] += label_acc['pkts']
-                acc['bytes'] += label_acc['bytes']
-                accs[label_id] = acc
+            for label_id in missing_labels:
+                LOG.warn("Missing counter for label %(label_id)s, "
+                         "router %(router_id)s.",
+                         {'label_id': label_id, 'router_id': router_id})
 
         for router_id in routers_to_reconfigure:
             self.routers.pop(router_id, None)
