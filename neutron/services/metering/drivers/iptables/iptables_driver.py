@@ -98,7 +98,8 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         self.driver = importutils.import_object(self.conf.interface_driver,
                                                 self.conf)
         self.dummy_iptables_manager = NfacctIptablesManager(
-            root_helper=self.root_helper)
+            root_helper=plugin.root_helper)
+        self.green_pool = eventlet.greenpool.GreenPool()
 
     def _update_router(self, router):
         r = self.routers.get(router['id'],
@@ -108,29 +109,34 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
 
         return r
 
+    def _green_update_router(self, router):
+        old_gw_port_id = None
+        old_rm = self.routers.get(router['id'])
+        if old_rm:
+            old_gw_port_id = old_rm.router['gw_port_id']
+        gw_port_id = router['gw_port_id']
+
+        if gw_port_id != old_gw_port_id:
+            if old_rm:
+                with IptablesManagerTransaction(old_rm.iptables_manager):
+                    self._process_disassociate_metering_label(router)
+                    if gw_port_id:
+                        self._process_associate_metering_label(router)
+            elif gw_port_id:
+                self._process_associate_metering_label(router)
+
     @log.log
     def update_routers(self, context, routers):
         # disassociate removed routers
         router_ids = set(router['id'] for router in routers)
         for router_id, rm in six.iteritems(self.routers):
             if router_id not in router_ids:
-                self._process_disassociate_metering_label(rm.router)
-
+                self.green_pool.spawn_n(
+                    self._process_disassociate_metering_label, rm.router)
+        self.green_pool.waitall()
         for router in routers:
-            old_gw_port_id = None
-            old_rm = self.routers.get(router['id'])
-            if old_rm:
-                old_gw_port_id = old_rm.router['gw_port_id']
-            gw_port_id = router['gw_port_id']
-
-            if gw_port_id != old_gw_port_id:
-                if old_rm:
-                    with IptablesManagerTransaction(old_rm.iptables_manager):
-                        self._process_disassociate_metering_label(router)
-                        if gw_port_id:
-                            self._process_associate_metering_label(router)
-                elif gw_port_id:
-                    self._process_associate_metering_label(router)
+            self.green_pool.spawn_n(self._green_update_router, router)
+        self.green_pool.waitall()
 
     @log.log
     def remove_router(self, context, router_id):
@@ -212,12 +218,15 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
     @log.log
     def add_metering_label(self, context, routers):
         for router in routers:
-            self._process_associate_metering_label(router)
+            self.green_pool.spawn_n(
+                self._process_associate_metering_label, router)
+        self.green_pool.waitall()
 
     @log.log
     def update_metering_label_rules(self, context, routers):
         for router in routers:
-            self._update_metering_label_rules(router)
+            self.green_pool.spawn_n(self._update_metering_label_rules, router)
+        self.green_pool.waitall()
 
     def _update_metering_label_rules(self, router):
         rm = self.routers.get(router['id'])
@@ -244,7 +253,9 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
     @log.log
     def remove_metering_label(self, context, routers):
         for router in routers:
-            self._process_disassociate_metering_label(router)
+            self.green_pool.spawn_n(
+                self._process_disassociate_metering_label, router)
+        self.green_pool.waitall()
 
     def get_traffic_counter(self, router):
         router_id = router['id']
