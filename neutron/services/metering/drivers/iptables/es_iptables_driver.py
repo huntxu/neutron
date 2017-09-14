@@ -15,6 +15,8 @@
 
 import six
 
+import eventlet
+
 from neutron.agent.linux import iptables_manager
 from neutron.agent.linux.nfacct import NfacctMixin
 from neutron.common import constants as constants
@@ -67,6 +69,28 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
         self.routers[r.id] = r
         return r
 
+    def _green_update_es_router(self, router):
+        old_rm = self.routers.get(router['id'])
+        if old_rm:
+            old_es_metering_labels = set(old_rm.es_metering_labels.keys())
+            persist_labels = set()
+            with iptables_driver.IptablesManagerTransaction(
+                old_rm.iptables_manager
+            ):
+                labels = router.get(constants.ES_METERING_LABEL_KEY, [])
+                for label in labels:
+                    label_id = label['id']
+                    if label_id in old_es_metering_labels:
+                        persist_labels.add(label_id)
+                    else:
+                        self._add_es_metering_label(old_rm, label)
+
+                for label_id in old_es_metering_labels - persist_labels:
+                    self._remove_es_metering_label(old_rm, label_id)
+
+        else:
+            self._process_associate_es_metering_label(router)
+
     @log.log
     def update_routers(self, context, routers):
         """Deal with the EayunStack metering extension."""
@@ -79,30 +103,14 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
         router_ids = set(router['id'] for router in routers)
         for router_id, rm in six.iteritems(self.routers):
             if router_id not in router_ids:
-                self._process_disassociate_es_metering_label(rm.router)
+                self.green_pool.spawn_n(
+                    self._process_disassociate_es_metering_label, rm.router)
+        self.green_pool.waitall()
 
         # Added or updated routers
         for router in routers:
-            old_rm = self.routers.get(router['id'])
-            if old_rm:
-                old_es_metering_labels = set(old_rm.es_metering_labels.keys())
-                persist_labels = set()
-                with iptables_driver.IptablesManagerTransaction(
-                    old_rm.iptables_manager
-                ):
-                    labels = router.get(constants.ES_METERING_LABEL_KEY, [])
-                    for label in labels:
-                        label_id = label['id']
-                        if label_id in old_es_metering_labels:
-                            persist_labels.add(label_id)
-                        else:
-                            self._add_es_metering_label(old_rm, label)
-
-                    for label_id in old_es_metering_labels - persist_labels:
-                        self._remove_es_metering_label(old_rm, label_id)
-
-            else:
-                self._process_associate_es_metering_label(router)
+            self.green_pool.spawn_n(self._green_update_es_router, router)
+        self.green_pool.waitall()
 
     @staticmethod
     def _get_es_meter_rule(label):
@@ -169,9 +177,13 @@ class EsIptablesMeteringDriver(iptables_driver.IptablesMeteringDriver):
     @log.log
     def add_es_metering_label(self, _context, routers):
         for router in routers:
-            self._process_associate_es_metering_label(router)
+            self.green_pool.spawn_n(
+                self._process_associate_es_metering_label, router)
+        self.green_pool.waitall()
 
     @log.log
     def remove_es_metering_label(self, _context, routers):
         for router in routers:
-            self._process_disassociate_es_metering_label(router)
+            self.green_pool.spawn_n(
+                self._process_disassociate_es_metering_label, router)
+        self.green_pool.waitall()
