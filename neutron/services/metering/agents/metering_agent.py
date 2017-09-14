@@ -75,8 +75,8 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
 
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
-        self._load_drivers()
         self.root_helper = config.get_root_helper(self.conf)
+        self._load_drivers()
         self.context = context.get_admin_context_without_session()
         self.metering_loop = loopingcall.FixedIntervalLoopingCall(
             self._metering_loop
