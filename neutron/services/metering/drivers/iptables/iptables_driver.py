@@ -98,7 +98,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         self.driver = importutils.import_object(self.conf.interface_driver,
                                                 self.conf)
         self.dummy_iptables_manager = NfacctIptablesManager(
-            root_helper=self.root_helper)
+            root_helper=plugin.root_helper)
 
     def _update_router(self, router):
         r = self.routers.get(router['id'],
