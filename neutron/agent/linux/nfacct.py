@@ -119,4 +119,10 @@ class NfacctIptablesManager(iptables_manager.IptablesManager,
         self.add_nfacct_objects(self.nfacct_objects)
         self.nfacct_objects = set()
         super(NfacctIptablesManager, self).apply()
-        self.nfacct_flush()
+        # Hack for kernel doesn't support nfacct per net namespace.
+        # We cannot flush nfacct now because iptables-save processes
+        # in other net namespaces may not finish yet. Flushing now would
+        # delete all newly added nfacct objects and make iptables-save in
+        # other net namespaces fail.
+        # The following line is keep here for reference.
+        # self.nfacct_flush()
