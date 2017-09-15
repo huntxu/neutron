@@ -39,19 +39,19 @@ class L7policyInUse(qexception.BadRequest):
 
 class L7policyActionKeyValueNotSupport(qexception.BadRequest):
     message = _("L7policy action %(l7policy_action)s with key %(l7policy_key)s"
-                "and value %(l7policy_value)s does not support")
+                " and value %(l7policy_value)s does not support")
 
 
 class L7ruleNotFound(qexception.NotFound):
     message = _("L7rule %(l7rule_id)s could not be found")
 
 
-class L7ruleInUse(qexception.NotFound):
+class L7ruleInUse(qexception.InUse):
     message = _("L7rule %(l7rule_id)s still in use")
 
 
 class L7ruleTypeKeyValueNotSupport(qexception.BadRequest):
-    message = _("L7rule type %(l7rule_type)s with key %(l7rule_key)s"
+    message = _("L7rule type %(l7rule_type)s with key %(l7rule_key)s "
                 "and value %(l7rule_value)s dose not support")
 
 
@@ -61,12 +61,12 @@ class L7ruleCompareTypeValueNotSupport(qexception.BadRequest):
 
 
 class L7policyRuleAssociationExists(qexception.BadRequest):
-    message = _("L7policy %(policy_id)s is already associated"
+    message = _("L7policy %(policy_id)s is already associated "
                 "with L7rule %(rule_id)s")
 
 
 class L7policyRuleAssociationNotFound(qexception.NotFound):
-    message = _("L7policy %(policy_id)s is not associated"
+    message = _("L7policy %(policy_id)s is not associated "
                 "with L7rule %(rule_id)s")
 
 

@@ -232,8 +232,14 @@ class OFEWDVRAgent(object):
                 dl_dst=gateway_mac, proto='ip', ip_dst=port['ip'])
 
     def _add_flows_to_hosted_port(self, port, gateway_mac):
+        if port['host'] != self.host:
+            LOG.debug("Port %s is not hosted by this agent.", port['name'])
+            return
         port_ofno = self.int_br.get_port_ofport(port['name'])
-        if port_ofno == INVALID_OFPORT or port['host'] != self.host:
+        if port_ofno == INVALID_OFPORT:
+            LOG.warning("Port %s is not ready.", port['name'])
+            # Setting port['host'] to None for next sync.
+            port['host'] = None
             return
         actions = "strip_vlan,mod_dl_src:%s,dec_ttl,output:%s" % (
             gateway_mac, port_ofno)
@@ -289,7 +295,7 @@ class OFEWDVRAgent(object):
 
             old_port = old_subnet['ports'].pop(port_id)
             if self._port_moved_out_of_host(old_port, port):
-                self._del_flows_to_hosted_port(port)
+                self._del_flows_to_hosted_port(old_port)
             elif self._port_moved_into_host(old_port, port):
                 self._add_flows_to_hosted_port(port, gateway_mac)
 

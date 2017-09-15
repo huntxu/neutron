@@ -659,9 +659,10 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
                                pptp_credential['associations']]}
         return self._fields(res, fields)
 
-    def _username_already_exists(self, context, username):
-        query = self._model_query(context, PPTPCredential)
-        return len(query.filter_by(username=username).all()) > 0
+    def _username_already_exists(self, context, tenant_id, username):
+        credentials = self._model_query(context, PPTPCredential).filter_by(
+            tenant_id=tenant_id, username=username).all()
+        return len(credentials) > 0
 
     def _create_port_for_vpnservice(self, context,
                                     vpnservice_id, pptp_credential_id):
@@ -695,7 +696,7 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
         pptp_credential_id = uuidutils.generate_uuid()
         with context.session.begin(subtransactions=True):
             username = pptp_credential['username']
-            if self._username_already_exists(context, username):
+            if self._username_already_exists(context, tenant_id, username):
                 raise vpnaas.PPTPUsernameAlreadyExists(username=username)
             pptp_credential_db = PPTPCredential(
                 id=pptp_credential_id,

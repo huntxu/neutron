@@ -21,6 +21,7 @@ eventlet.monkey_patch()
 from oslo.config import cfg
 
 from neutron.agent.common import config
+from neutron.agent.linux.nfacct import NfacctIptablesManager
 from neutron.agent import rpc as agent_rpc
 from neutron.common import config as common_config
 from neutron.common import constants as constants
@@ -74,8 +75,8 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
 
     def __init__(self, host, conf=None):
         self.conf = conf or cfg.CONF
-        self._load_drivers()
         self.root_helper = config.get_root_helper(self.conf)
+        self._load_drivers()
         self.context = context.get_admin_context_without_session()
         self.metering_loop = loopingcall.FixedIntervalLoopingCall(
             self._metering_loop
@@ -88,6 +89,9 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
         self.label_tenant_id = {}
         self.routers = {}
         self.metering_infos = {}
+        # Hack for kernel doesn't support nfacct per net namespace
+        self.dummy_iptables_manager = \
+            self.metering_driver.dummy_iptables_manager
         super(MeteringAgent, self).__init__(host=host)
 
     def _load_drivers(self):
@@ -173,7 +177,10 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
     @utils.synchronized('metering-agent')
     def _invoke_driver(self, context, meterings, func_name):
         try:
-            return getattr(self.metering_driver, func_name)(context, meterings)
+            ret = getattr(self.metering_driver, func_name)(context, meterings)
+            # Hack for kernel doesn't support nfacct per net namespace
+            self.dummy_iptables_manager.nfacct_flush()
+            return ret
         except AttributeError:
             LOG.exception(_("Driver %(driver)s does not implement %(func)s"),
                           {'driver': self.conf.driver,
