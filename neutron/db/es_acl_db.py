@@ -28,6 +28,7 @@ from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
 
 from neutron import manager
+from neutron.plugins.common import constants as p_constants
 
 
 LOG = logging.getLogger(__name__)
@@ -93,6 +94,11 @@ class EsAclDbMixin(es_acl.EsAclPluginBase, base_db.CommonDbMixin):
     def _core_plugin(self):
         return manager.NeutronManager.get_plugin()
 
+    @property
+    def _l3_plugin(self):
+        return manager.NeutronManager.get_service_plugins().get(
+            p_constants.L3_ROUTER_NAT)
+
     def _get_es_acl(self, context, es_acl_id):
         try:
             return self._get_by_id(context, EsAcl, es_acl_id)
@@ -156,6 +162,7 @@ class EsAclDbMixin(es_acl.EsAclPluginBase, base_db.CommonDbMixin):
         """Bind subnets to ACL."""
         subnet_ids = subnet_ids['subnet_ids']
         bound_subnets = []
+        affected_routers = set()
         with context.session.begin(subtransactions=True):
             acl_db = self._get_es_acl(context, es_acl_id)
             already_bound = set(
@@ -205,18 +212,23 @@ class EsAclDbMixin(es_acl.EsAclPluginBase, base_db.CommonDbMixin):
                     router_port_id=router_port_id)
                 context.session.add(binding_db)
                 bound_subnets.append(subnet_id)
-        return {'bound_subnets': bound_subnets}
+                if router_id:
+                    affected_routers.add(router_id)
+        return {'bound_subnets': bound_subnets}, affected_routers
 
     def unbind_subnets(self, context, es_acl_id, subnet_ids):
         """Unbind subnets from ACL."""
         subnet_ids = subnet_ids['subnet_ids']
         unbound_subnets = []
+        affected_routers = set()
         with context.session.begin(subtransactions=True):
             acl_db = self._get_es_acl(context, es_acl_id)
             subnet_ids = set(subnet_ids)
             for binding in acl_db.bindings:
                 subnet_id = binding.subnet_id
                 if subnet_id in subnet_ids:
+                    if binding.router_id:
+                        affected_routers.add(binding.router_id)
                     context.session.delete(binding)
                     subnet_ids.remove(subnet_id)
                     unbound_subnets.append(subnet_id)
@@ -224,7 +236,7 @@ class EsAclDbMixin(es_acl.EsAclPluginBase, base_db.CommonDbMixin):
                 LOG.warn('ACL %(acl_id)s is not bound to '
                          'subnet(s) %(subnet_ids)s.',
                          {'acl_id': es_acl_id, 'subnet_ids': subnet_ids})
-        return {'unbound_subnets': unbound_subnets}
+        return {'unbound_subnets': unbound_subnets}, affected_routers
 
     def _get_es_acl_rule(self, context, es_acl_rule_id):
         try:
@@ -416,3 +428,63 @@ class EsAclDbMixin(es_acl.EsAclPluginBase, base_db.CommonDbMixin):
             context, EsAclRule, self._make_es_acl_rule_dict,
             filters=filters, fields=fields, sorts=sorts,
             limit=limit, marker_obj=marker_object, page_reverse=page_reverse)
+
+    # Helper functions for plugin
+    def _make_es_acl_rule_dict_for_agent(self, acl_rule_db):
+        fields_for_agent = set(
+            ['protocol', 'source_ip_address', 'destination_ip_address',
+             'source_port', 'destination_port', 'action'])
+        return self._make_es_acl_rule_dict(acl_rule_db, fields_for_agent)
+
+    def _make_es_acl_dict_for_agent(self, acl_db):
+        res = {
+            'ingress': [
+                self._make_es_acl_rule_dict_for_agent(rule)
+                for rule in acl_db.ingress_rules],
+            'egress': [
+                self._make_es_acl_rule_dict_for_agent(rule)
+                for rule in acl_db.egress_rules]}
+        return res
+
+    def get_related_routers(self, context, acl_id):
+        routers = set()
+        if acl_id is not None:
+            acl_db = self._get_es_acl(context, acl_id)
+            routers = set(binding.router_id for binding in acl_db.bindings)
+        return routers
+
+    def get_es_acl_by_routers(self, context, router_ids):
+        routers = {}
+        acls = {}
+        binding_query = context.session.query(EsAclSubnetBinding).filter(
+            EsAclSubnetBinding.router_id.in_(router_ids))
+        acl_ids = set()
+        for binding in binding_query:
+            acl_id = binding.acl_id
+            router_id = binding.router_id
+            acl_ids.add(acl_id)
+            router_ports = routers.get(router_id, {})
+            if acl_id not in router_ports:
+                router_ports[acl_id] = set()
+            router_ports[acl_id].add(binding.router_port_id)
+            routers[router_id] = router_ports
+
+        acl_query = context.session.query(EsAcl).filter(EsAcl.id.in_(acl_ids))
+        for acl in acl_query:
+            acls[acl.id] = self._make_es_acl_dict_for_agent(acl)
+
+        return {'acls': acls, 'routers': routers}
+
+    def internal_port_added_to_router(self, context,
+                                      router_id, subnet_id, port_id):
+        with context.session.begin(subtransactions=True):
+            binding = context.session.query(
+                EsAclSubnetBinding
+            ).filter_by(subnet_id=subnet_id).with_lockmode('update').first()
+            if not binding:
+                return {}
+
+            binding.update({'router_id': router_id, 'router_port_id': port_id})
+            acl_id = binding.acl_id
+            acl_db = self._get_es_acl(context, acl_id)
+        return {acl_id: self._make_es_acl_dict_for_agent(acl_db)}
