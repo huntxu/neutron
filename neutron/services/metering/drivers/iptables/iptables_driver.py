@@ -82,7 +82,9 @@ class RouterWithMetering(object):
         self.metering_labels = {}
 
     def get_metering_labels(self):
-        return self.metering_labels.keys()
+        return [
+            label_id for label_id in self.metering_labels.keys()
+            if self.metering_labels[label_id]['rules']]
 
 
 class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
@@ -249,6 +251,7 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
                     self._process_metering_label_rules(rm, rules,
                                                        label_id,
                                                        rules_chain)
+                rm.metering_labels[label_id] = label
 
     @log.log
     def remove_metering_label(self, context, routers):
