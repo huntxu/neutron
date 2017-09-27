@@ -444,6 +444,19 @@ class OVSBridge(BaseOVS):
             msg = _('Unable to determine mac address for %s') % self.br_name
             raise Exception(msg)
 
+    def add_netflow(self, server, port, active_timeout, engine_id):
+        if self.bridge_exists(self.br_name):
+            self.run_vsctl(
+                ["set", "Bridge", self.br_name, "netflow=@nf", "--",
+                 "--id=@nf", "create", "NetFlow",
+                 "targets=%s\\:%s" % (server, port),
+                 "active_timeout=%s" % active_timeout,
+                 "engine_id=%s" % engine_id])
+
+    def clear_netflow(self):
+        if self.bridge_exists(self.br_name):
+            self.run_vsctl(["clear", "Bridge", self.br_name, "netflow"])
+
     def __enter__(self):
         self.create()
         return self

@@ -25,6 +25,7 @@ eventlet.monkey_patch()
 import netaddr
 from neutron.plugins.openvswitch.agent import ovs_dvr_neutron_agent
 from neutron.plugins.openvswitch.agent import openflow_ew_dvr_agent
+from neutron.plugins.openvswitch.agent import netflow_agent
 from oslo.config import cfg
 from six import moves
 
@@ -267,6 +268,14 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
         self.sg_agent = OVSSecurityGroupAgent(self.context,
                                               self.plugin_rpc,
                                               root_helper)
+        # Netflow External IP Metering
+        if cfg.CONF.NETFLOW.enabled:
+            self.nf_agent = netflow_agent.NetflowAgent(
+                self.context, integ_br, self.root_helper, self.bridge_mappings,
+                cfg.CONF.NETFLOW)
+        else:
+            self.nf_agent = None
+
         # Initialize iteration counter
         self.iter_num = 0
         self.run_daemon_loop = True
@@ -678,6 +687,9 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
                                         device_owner,
                                         local_vlan_id=lvm.vlan)
 
+        if self.nf_agent:
+            self.nf_agent.port_bound(port, physical_network, fixed_ips)
+
         # Do not bind a port if it's already bound
         cur_tag = self.int_br.db_get_val("Port", port.port_name, "tag")
         if cur_tag != str(lvm.vlan):
@@ -709,6 +721,8 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
             vif_port = lvm.vif_ports[vif_id]
             self.dvr_agent.unbind_port_from_dvr(vif_port,
                                                 local_vlan_id=lvm.vlan)
+            if self.nf_agent:
+                self.nf_agent.port_unbound(vif_port)
         lvm.vif_ports.pop(vif_id, None)
 
         if not lvm.vif_ports:
@@ -1526,6 +1540,8 @@ class OVSNeutronAgent(n_rpc.RpcCallback,
     def _handle_sigterm(self, signum, frame):
         LOG.debug("Agent caught SIGTERM, quitting daemon loop.")
         self.run_daemon_loop = False
+        if self.nf_agent:
+            self.nf_agent.stop()
 
 
 def create_agent_config_map(config):

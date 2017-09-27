@@ -100,8 +100,23 @@ agent_opts = [
                 help=_("Make the l2 agent run in DVR mode.")),
 ]
 
+netflow_opts = [
+    cfg.BoolOpt('enabled', default=False,
+                help=_("Enable NetFlow stat metering by external IP.")),
+    cfg.StrOpt('low_level_ingress_bridge', default='',
+               help=_("The low level ingress bridge used to monitor "
+                      "incoming traffic.")),
+    cfg.ListOpt('ext_network_providers', default=[],
+                help=_("External network providers.")),
+    cfg.IntOpt('report_interval', default=60,
+               help=_("Metering report interval.")),
+    cfg.IntOpt('active_timeout', default=20,
+               help=_("Netflow record active timeout.")),
+]
+
 
 cfg.CONF.register_opts(ovs_opts, "OVS")
 cfg.CONF.register_opts(agent_opts, "AGENT")
+cfg.CONF.register_opts(netflow_opts, "NETFLOW")
 config.register_agent_state_opts_helper(cfg.CONF)
 config.register_root_helper(cfg.CONF)
