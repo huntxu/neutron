@@ -51,6 +51,7 @@ from neutron.openstack.common import processutils
 from neutron.openstack.common import service
 from neutron.openstack.common import timeutils
 from neutron import service as neutron_service
+from neutron.services.es_acl.agents import es_acl_l3_agent
 from neutron.services.firewall.agents.l3reference import firewall_l3_agent
 
 LOG = logging.getLogger(__name__)
@@ -449,6 +450,7 @@ class RouterProcessingQueue(object):
 
 class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                  l3_ha_agent.AgentMixin,
+                 es_acl_l3_agent.EsAclL3AgentMixin,
                  manager.Manager):
     """Manager for L3NatAgent
 
@@ -585,6 +587,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         self.target_ex_net_id = None
         self.use_ipv6 = ipv6_utils.is_enabled()
+        self.init_es_acl(self.conf)
 
     def _check_config_params(self):
         """Check items in configuration files.
@@ -904,6 +907,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
         for p in new_ports:
             self._set_subnet_info(p)
             self.internal_network_added(ri, p)
+            self.es_acl_internal_network_added(ri, p)
             ri.internal_ports.append(p)
             self._set_subnet_arp_info(ri, p)
             if (not new_ipv6_port and
@@ -1006,6 +1010,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             # Update portmapping status on the neutron server
             self.plugin_rpc.update_portmapping_statuses(
                 self.context, pm_statuses)
+
+        # Process EayunStack ACL rules
+        self.es_acl_process_router(ri)
 
         # Process SNAT/DNAT rules for floating IPs
         fip_statuses = {}
@@ -1994,6 +2001,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                     update.timestamp = timeutils.utcnow()
                     routers = self.plugin_rpc.get_routers(self.context,
                                                           [update.id])
+                    self.es_acl_update_router_info(routers)
                 except Exception:
                     msg = _("Failed to fetch router information for '%s'")
                     LOG.exception(msg, update.id)
@@ -2045,6 +2053,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
             timestamp = timeutils.utcnow()
             routers = self.plugin_rpc.get_routers(
                 context, router_ids)
+            self.es_acl_update_router_info(routers)
 
             LOG.debug(_('Processing :%r'), routers)
             for r in routers:

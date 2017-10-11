@@ -22,6 +22,7 @@ VPN = "VPN"
 METERING = "METERING"
 L3_ROUTER_NAT = "L3_ROUTER_NAT"
 ES_METERING = "ES_METERING"
+ES_ACL = "ES_ACL"
 
 
 #maps extension alias to service type
@@ -41,6 +42,7 @@ ALLOWED_SERVICES = [CORE, DUMMY, LOADBALANCER, FIREWALL, VPN, METERING,
 COMMON_PREFIXES = {
     CORE: "",
     DUMMY: "/dummy_svc",
+    ES_ACL: "/fw",
     LOADBALANCER: "/lb",
     FIREWALL: "/fw",
     VPN: "/vpn",
