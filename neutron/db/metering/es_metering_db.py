@@ -45,7 +45,8 @@ class EsMeteringLabel(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     tcp_port = sa.Column(sa.Integer)
     router = orm.relationship(
         Router,
-        backref=orm.backref("es_metering_labels", lazy='joined', uselist=True)
+        backref=orm.backref("es_metering_labels", lazy='joined', uselist=True,
+                            cascade='all, delete-orphan')
     )
 
 
