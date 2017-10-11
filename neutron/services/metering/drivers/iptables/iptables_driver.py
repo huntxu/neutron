@@ -112,20 +112,9 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
         return r
 
     def _green_update_router(self, router):
-        old_gw_port_id = None
         old_rm = self.routers.get(router['id'])
-        if old_rm:
-            old_gw_port_id = old_rm.router['gw_port_id']
-        gw_port_id = router['gw_port_id']
-
-        if gw_port_id != old_gw_port_id:
-            if old_rm:
-                with IptablesManagerTransaction(old_rm.iptables_manager):
-                    self._process_disassociate_metering_label(router)
-                    if gw_port_id:
-                        self._process_associate_metering_label(router)
-            elif gw_port_id:
-                self._process_associate_metering_label(router)
+        if not old_rm:
+            self._process_associate_metering_label(router)
 
     @log.log
     def update_routers(self, context, routers):
@@ -147,8 +136,6 @@ class IptablesMeteringDriver(abstract_driver.MeteringAbstractDriver):
 
     def _process_metering_label_rules(self, rm, rules, label_id, rules_chain):
         im = rm.iptables_manager
-        if not rm.router['gw_port_id']:
-            return
         ext_dev = "%s+" % EXTERNAL_DEV_PREFIX
 
         for rule in rules:
