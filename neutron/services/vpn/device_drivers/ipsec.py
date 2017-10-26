@@ -75,6 +75,9 @@ STATUS_MAP = {
 }
 
 IPSEC_CONNS = 'ipsec_site_connections'
+NETMAP_DNAT_RULE = ('-i qg-+ -s %s -d %s -m policy --dir in --pol ipsec '
+                    '-j NETMAP --to %s')
+NETMAP_SNAT_RULE = '-o qg-+ -s %s -d %s -j NETMAP --to %s'
 
 
 def _get_template(template_file):
@@ -522,17 +525,38 @@ class IPsecDriver(device_drivers.DeviceDriver):
         :param vpnservice: vpnservices
         :param func: self.add_nat_rule or self.remove_nat_rule
         """
-        local_cidr = vpnservice['subnet']['cidr']
+        local_subnet_cidr = vpnservice['subnet']['cidr']
         router_id = vpnservice['router_id']
+        rule_tag = vpnservice['id']
+        self.agent.remove_nat_rules_by_tag(router_id, rule_tag)
         for ipsec_site_connection in vpnservice['ipsec_site_connections']:
+            local_cidr = ipsec_site_connection['local_cidr']
             for peer_cidr in ipsec_site_connection['peer_cidrs']:
-                func(
-                    router_id,
-                    'POSTROUTING',
-                    '-s %s -d %s -m policy '
-                    '--dir out --pol ipsec '
-                    '-j ACCEPT ' % (local_cidr, peer_cidr),
-                    top=True)
+                if local_cidr:
+                    func(
+                        router_id,
+                        'POSTROUTING',
+                        '-s %s -d %s -m policy '
+                        '--dir out --pol ipsec '
+                        '-j ACCEPT ' % (local_cidr, peer_cidr),
+                        top=True, tag=rule_tag)
+                    func(router_id, 'PREROUTING',
+                         NETMAP_DNAT_RULE % (
+                             peer_cidr, local_cidr, local_subnet_cidr),
+                         top=True, tag=rule_tag)
+                    func(router_id, 'POSTROUTING',
+                         NETMAP_SNAT_RULE % (
+                             local_subnet_cidr, peer_cidr, local_cidr),
+                         top=True, tag=rule_tag)
+                else:
+                    func(
+                        router_id,
+                        'POSTROUTING',
+                        '-s %s -d %s -m policy '
+                        '--dir out --pol ipsec '
+                        '-j ACCEPT ' % (local_subnet_cidr, peer_cidr),
+                        top=True)
+
         self.agent.iptables_apply(router_id)
 
     def vpnservice_updated(self, context, **kwargs):

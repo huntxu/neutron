@@ -14,7 +14,11 @@ conn {{ipsec_site_connection.id}}
     auto={{ipsec_site_connection.initiator}}
     # NOTE:REQUIRED
     # [subnet]
+    {% if ipsec_site_connection.local_cidr -%}
+    leftsubnet={{ipsec_site_connection.local_cidr}}
+    {% else -%}
     leftsubnet={{vpnservice.subnet.cidr}}
+    {% endif -%}
     # leftsubnet=networkA/netmaskA, networkB/netmaskB (IKEv2 only)
     # [updown]
     # What "updown" script to run to adjust routing and/or firewalling when

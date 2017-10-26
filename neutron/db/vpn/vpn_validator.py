@@ -12,6 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
+
 from neutron.db import l3_db
 from neutron.extensions import vpnaas
 from neutron import manager
@@ -52,6 +54,14 @@ class VpnReferenceValidator(object):
             raise vpnaas.IPsecSiteConnectionMtuError(mtu=mtu,
                                                      version=ip_version)
 
+    def _check_local_cidr(self, ipsec_sitecon, subnet):
+        local_cidr = ipsec_sitecon.get('local_cidr')
+        if local_cidr:
+            if netaddr.IPNetwork(local_cidr).prefixlen != subnet.prefixlen:
+                raise vpnaas.IPsecSiteConnectionLocalCIDRError(
+                    local_cidr=local_cidr,
+                    subnet_cidr='%s' % subnet.cidr)
+
     def assign_sensible_ipsec_sitecon_defaults(self, ipsec_sitecon,
                                                prev_conn=None):
         """Provide defaults for optional items, if missing.
@@ -73,12 +83,14 @@ class VpnReferenceValidator(object):
                                                prev_conn['dpd_timeout'])
 
     def validate_ipsec_site_connection(self, context, ipsec_sitecon,
-                                       ip_version):
+                                       subnet_cidr):
         """Reference implementation of validation for IPSec connection."""
+        subnet = netaddr.IPNetwork(subnet_cidr)
         self._check_dpd(ipsec_sitecon)
+        self._check_local_cidr(ipsec_sitecon, subnet)
         mtu = ipsec_sitecon.get('mtu')
         if mtu:
-            self._check_mtu(context, mtu, ip_version)
+            self._check_mtu(context, mtu, subnet.version)
 
     def _check_router(self, context, router_id):
         router = self.l3_plugin.get_router(context, router_id)

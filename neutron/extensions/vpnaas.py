@@ -43,6 +43,11 @@ class IPsecSiteConnectionMtuError(qexception.InvalidInput):
                 "for ipv%(version)s")
 
 
+class IPsecSiteConnectionLocalCIDRError(qexception.InvalidInput):
+    message = _("ipsec_site_connection prefixlens of local CIDR %(local_cidr)s "
+                "and subnet CIDR %(subnet_cidr)s are not equal")
+
+
 class IKEPolicyNotFound(qexception.NotFound):
     message = _("IKEPolicy %(ikepolicy_id)s could not be found")
 
@@ -179,6 +184,9 @@ RESOURCE_ATTRIBUTE_MAP = {
                        'convert_to': attr.convert_to_list,
                        'validate': {'type:subnet_list': None},
                        'is_visible': True},
+        'local_cidr': {'allow_post': True, 'allow_put': True,
+                       'validate': {'type:subnet_or_none': None},
+                       'is_visible': True, 'default': None},
         'route_mode': {'allow_post': False, 'allow_put': False,
                        'default': 'static',
                        'is_visible': True},

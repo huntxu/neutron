@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
 import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
@@ -110,6 +109,7 @@ class IPsecSiteConnection(model_base.BASEV2,
     description = sa.Column(sa.String(255))
     peer_address = sa.Column(sa.String(255), nullable=False)
     peer_id = sa.Column(sa.String(255), nullable=False)
+    local_cidr = sa.Column(sa.String(32))
     route_mode = sa.Column(sa.String(8), nullable=False)
     mtu = sa.Column(sa.Integer, nullable=False)
     initiator = sa.Column(sa.Enum("bi-directional", "response-only",
@@ -248,6 +248,7 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
                'description': ipsec_site_conn['description'],
                'peer_address': ipsec_site_conn['peer_address'],
                'peer_id': ipsec_site_conn['peer_id'],
+               'local_cidr': ipsec_site_conn['local_cidr'],
                'route_mode': ipsec_site_conn['route_mode'],
                'mtu': ipsec_site_conn['mtu'],
                'auth_mode': ipsec_site_conn['auth_mode'],
@@ -269,11 +270,9 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
 
         return self._fields(res, fields)
 
-    def _get_subnet_ip_version(self, context, vpnservice_id):
+    def _get_subnet_cidr(self, context, vpnservice_id):
         vpn_service_db = self._get_vpnservice(context, vpnservice_id)
-        subnet = vpn_service_db.subnet['cidr']
-        ip_version = netaddr.IPNetwork(subnet).version
-        return ip_version
+        return vpn_service_db.subnet['cidr']
 
     def create_ipsec_site_connection(self, context, ipsec_site_connection,
                                      validator=None):
@@ -293,10 +292,10 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
                                IPsecPolicy,
                                ipsec_sitecon['ipsecpolicy_id'])
             vpnservice_id = ipsec_sitecon['vpnservice_id']
-            ip_version = self._get_subnet_ip_version(context, vpnservice_id)
+            subnet_cidr = self._get_subnet_cidr(context, vpnservice_id)
             validator.validate_ipsec_site_connection(context,
                                                      ipsec_sitecon,
-                                                     ip_version)
+                                                     subnet_cidr)
             ipsec_site_conn_db = IPsecSiteConnection(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
@@ -304,6 +303,7 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
                 description=ipsec_sitecon['description'],
                 peer_address=ipsec_sitecon['peer_address'],
                 peer_id=ipsec_sitecon['peer_id'],
+                local_cidr=ipsec_sitecon['local_cidr'],
                 route_mode='static',
                 mtu=ipsec_sitecon['mtu'],
                 auth_mode='psk',
@@ -339,13 +339,13 @@ class VPNPluginDb(vpnaas.VPNPluginBase, base_db.CommonDbMixin):
                 IPsecSiteConnection,
                 ipsec_site_conn_id)
             vpnservice_id = ipsec_site_conn_db['vpnservice_id']
-            ip_version = self._get_subnet_ip_version(context, vpnservice_id)
+            subnet_cidr = self._get_subnet_cidr(context, vpnservice_id)
             validator.assign_sensible_ipsec_sitecon_defaults(
                 ipsec_sitecon, ipsec_site_conn_db)
             validator.validate_ipsec_site_connection(
                 context,
                 ipsec_sitecon,
-                ip_version)
+                subnet_cidr)
             self.assert_update_allowed(ipsec_site_conn_db)
 
             if "peer_cidrs" in ipsec_sitecon:

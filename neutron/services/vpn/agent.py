@@ -67,7 +67,7 @@ class VPNAgent(l3_agent.L3NATAgentWithStateReport):
             return
         return router_info.ns_name
 
-    def add_nat_rule(self, router_id, chain, rule, top=False):
+    def add_nat_rule(self, router_id, chain, rule, top=False, tag=None):
         """Add nat rule in namespace.
 
         :param router_id: router_id
@@ -81,9 +81,9 @@ class VPNAgent(l3_agent.L3NATAgentWithStateReport):
         if not router_info:
             return
         router_info.iptables_manager.ipv4['nat'].add_rule(
-            chain, rule, top=top)
+            chain, rule, top=top, tag=tag)
 
-    def remove_nat_rule(self, router_id, chain, rule, top=False):
+    def remove_nat_rule(self, router_id, chain, rule, top=False, _tag=None):
         """Remove nat rule in namespace.
 
         :param router_id: router_id
@@ -97,6 +97,12 @@ class VPNAgent(l3_agent.L3NATAgentWithStateReport):
             return
         router_info.iptables_manager.ipv4['nat'].remove_rule(
             chain, rule, top=top)
+
+    def remove_nat_rules_by_tag(self, router_id, tag):
+        router_info = self.router_info.get(router_id)
+        if not router_info:
+            return
+        router_info.iptables_manager.ipv4['nat'].clear_rules_by_tag(tag)
 
     def iptables_apply(self, router_id):
         """Apply IPtables.
