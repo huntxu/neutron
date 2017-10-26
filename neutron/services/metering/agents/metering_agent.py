@@ -78,6 +78,8 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
         self.root_helper = config.get_root_helper(self.conf)
         self._load_drivers()
         self.context = context.get_admin_context_without_session()
+        self.report_pool = eventlet.greenpool.GreenPool()
+        self.notifier = n_rpc.get_notifier('metering')
         self.metering_loop = loopingcall.FixedIntervalLoopingCall(
             self._metering_loop
         )
@@ -114,11 +116,12 @@ class MeteringAgent(MeteringPluginRpc, manager.Manager):
                     'host': self.host}
 
             LOG.debug(_("Send metering report: %s"), data)
-            notifier = n_rpc.get_notifier('metering')
-            notifier.info(self.context, 'l3.meter', data)
+            self.report_pool.spawn_n(
+                self.notifier.info, self.context, 'l3.meter', data)
             info['pkts'] = 0
             info['bytes'] = 0
             info['time'] = 0
+        self.report_pool.waitall()
 
     def _purge_metering_info(self):
         deadline_timestamp = int(time.time()) - self.conf.report_interval

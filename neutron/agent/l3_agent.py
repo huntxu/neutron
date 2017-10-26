@@ -77,6 +77,7 @@ PRIORITY_SYNC_ROUTERS_TASK = 1
 DELETE_ROUTER = 1
 # For EayunStack floatingip mechanism
 IPSET_CHAIN_LEN = 20
+ES_FIP_IP_RULE_PRIO = 32765
 
 
 class L3PluginApi(n_rpc.RpcProxy):
@@ -1247,8 +1248,9 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
 
         for ip in set(fixed_ips) - existing_ips:
             table = netaddr.IPNetwork(ip).value
-            ns_ipr.add_rule_from(ip, table)
-            ns_ipr.add_rule_from(fip_map[ip], table)
+            ns_ipr.add_rule_from(ip, table, rule_pr=ES_FIP_IP_RULE_PRIO)
+            ns_ipr.add_rule_from(fip_map[ip], table,
+                                 rule_pr=ES_FIP_IP_RULE_PRIO)
 
     def _es_add_floating_ip(self, ri, fip):
         addr_added = False
